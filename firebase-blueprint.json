@@ -1,54 +1,111 @@
 {
-  "collections": {
-    "employees": {
-      "fields": {
-        "name": "string",
-        "role": "string",
-        "department": "string",
-        "email": "string",
-        "salary": "number",
-        "status": "string",
-        "hiredAt": "timestamp"
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account and preferences with RBAC",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "MANAGER", "OPERATOR"] },
+        "displayName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Employee": {
+      "title": "Employee Record",
+      "description": "Detailed employee information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "department": { "type": "string" },
+        "email": { "type": "string" },
+        "salary": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "on_leave", "terminated"] },
+        "hiredAt": { "type": "string", "format": "date-time" }
       }
     },
-    "transactions": {
-      "fields": {
-        "title": "string",
-        "amount": "number",
-        "type": "string",
-        "category": "string",
-        "date": "timestamp",
-        "status": "string"
+    "Transaction": {
+      "title": "Financial Transaction",
+      "description": "Income or Expense record",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "category": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "cleared", "void"] },
+        "date": { "type": "string", "format": "date-time" }
       }
     },
-    "inventory": {
-      "fields": {
-        "name": "string",
-        "sku": "string",
-        "quantity": "number",
-        "price": "number",
-        "category": "string",
-        "lastRestocked": "timestamp"
+    "InventoryItem": {
+      "title": "Stock Item",
+      "description": "Real-time inventory tracking",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "sku": { "type": "string" },
+        "quantity": { "type": "number" },
+        "price": { "type": "number" },
+        "category": { "type": "string" },
+        "lastRestockedAt": { "type": "string", "format": "date-time" }
       }
     },
-    "tasks": {
-      "fields": {
-        "title": "string",
-        "description": "string",
-        "priority": "string",
-        "assignedTo": "string",
-        "status": "string",
-        "dueDate": "timestamp",
-        "createdAt": "timestamp"
+    "Task": {
+      "title": "Operational Task",
+      "description": "Enterprise task management",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
+        "assignedTo": { "type": "string" },
+        "status": { "type": "string", "enum": ["todo", "in_progress", "completed", "on_hold"] },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
       }
     },
-    "activityLog": {
-      "fields": {
-        "type": "string",
-        "message": "string",
-        "user": "string",
-        "timestamp": "timestamp"
+    "AuditLog": {
+      "title": "System Audit Log",
+      "description": "Immutable record of all critical system changes",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "action": { "type": "string" },
+        "resource": { "type": "string" },
+        "resourceId": { "type": "string" },
+        "changes": { "type": "object" },
+        "timestamp": { "type": "string", "format": "date-time" }
       }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "System users and their roles"
+    },
+    "/employees/{employeeId}": {
+      "schema": "Employee",
+      "description": "Human resources"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Financial ledger"
+    },
+    "/inventory/{itemId}": {
+      "schema": "InventoryItem",
+      "description": "Stock management"
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Workflow management"
+    },
+    "/auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Audit trails for compliance"
     }
   }
 }

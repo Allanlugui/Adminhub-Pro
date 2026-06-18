@@ -1,25 +1,41 @@
-import { LayoutDashboard, Users, CreditCard, Box, CheckSquare, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, CreditCard, Box, CheckSquare, Settings, LogOut, ShieldCheck, LifeBuoy, Database } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
+import { auth } from '@/src/lib/firebase';
+import { signOut } from 'firebase/auth';
+import { UserProfile } from '@/src/types';
 
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  userProfile: UserProfile | null;
 }
 
-export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
+export default function Sidebar({ activeTab, setActiveTab, userProfile }: SidebarProps) {
+  const handleLogout = () => {
+    if (confirm('Deseja realmente encerrar a sessão?')) {
+      signOut(auth);
+    }
+  };
+
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { id: 'hr', icon: Users, label: 'Recursos Humanos' },
     { id: 'finance', icon: CreditCard, label: 'Financeiro' },
     { id: 'inventory', icon: Box, label: 'Estoque' },
-    { id: 'tasks', icon: CheckSquare, label: 'Tarefas' },
+    { id: 'tickets', icon: LifeBuoy, label: 'Central de Serviços' },
+    { id: 'users', icon: ShieldCheck, label: 'Usuários & Acesso' },
+    { id: 'audit', icon: ShieldCheck, label: 'Logs de Auditoria' },
   ];
+
+  if (userProfile?.role === 'ADMIN') {
+    menuItems.push({ id: 'setup', icon: Database, label: 'Setup de Lançamento' });
+  }
 
   return (
     <div className="w-64 bg-zinc-900 text-white h-screen fixed left-0 top-0 flex flex-col border-r border-zinc-800">
       <div className="p-6">
-        <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-          AdminHub Pro
+        <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
+          AdminHub Enterprise
         </h1>
       </div>
       
@@ -42,11 +58,22 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
       </nav>
 
       <div className="p-4 border-t border-zinc-800 space-y-1">
-        <button className="w-full flex items-center space-x-3 px-4 py-3 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 rounded-lg transition-all">
+        <button 
+          onClick={() => setActiveTab('settings')}
+          className={cn(
+            "w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all",
+            activeTab === 'settings' 
+              ? "bg-zinc-800 text-zinc-200" 
+              : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+          )}
+        >
           <Settings className="w-5 h-5 text-zinc-500" />
           <span className="font-medium">Configurações</span>
         </button>
-        <button className="w-full flex items-center space-x-3 px-4 py-3 text-red-400 hover:bg-red-500/10 rounded-lg transition-all">
+        <button 
+          onClick={handleLogout}
+          className="w-full flex items-center space-x-3 px-4 py-3 text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+        >
           <LogOut className="w-5 h-5" />
           <span className="font-medium">Sair</span>
         </button>

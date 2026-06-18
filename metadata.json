@@ -1,6 +1,6 @@
 {
-  "name": "AdminHub Pro",
-  "description": "Sistema administrativo integrado para gestão de RH, financeiro, estoque e tarefas corporativas com dashboard em tempo real.",
+  "name": "AdminHub Enterprise",
+  "description": "Enterprise-grade administrative management system with RBAC, full audit trails, and modular scalability for corporate operations.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

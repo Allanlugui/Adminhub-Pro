@@ -1,16 +1,12 @@
+import { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
-import { TrendingUp, Users, Package, AlertCircle, DollarSign } from 'lucide-react';
+import { TrendingUp, Users, Package, AlertCircle, DollarSign, LifeBuoy } from 'lucide-react';
+import { db } from '@/src/lib/firebase';
+import { collection, query, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { formatCurrency, cn } from '@/src/lib/utils';
-import { motion } from 'motion/react';
-
-const data = [
-  { name: 'Jan', receita: 4000, despesa: 2400 },
-  { name: 'Fev', receita: 3000, despesa: 1398 },
-  { name: 'Mar', receita: 2000, despesa: 9800 },
-  { name: 'Abr', receita: 2780, despesa: 3908 },
-  { name: 'Mai', receita: 1890, despesa: 4800 },
-  { name: 'Jun', receita: 2390, despesa: 3800 },
-];
+import { motion, AnimatePresence } from 'motion/react';
+import { AuditLog } from '@/src/types';
+import { ShieldCheck } from 'lucide-react';
 
 const hrData = [
   { name: 'RH', total: 45 },
@@ -22,42 +18,166 @@ const hrData = [
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
 
 export default function Dashboard() {
+  const [activities, setActivities] = useState<AuditLog[]>([]);
+  const [stats, setStats] = useState({
+    revenue: 0,
+    employees: 0,
+    inventory: 0,
+    tasks: 0,
+    lowStock: 0,
+    pendingApprovals: 0
+  });
+  const [hrDist, setHrDist] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Activities
+    const qAct = query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'), limit(10));
+    const unsubAct = onSnapshot(qAct, (snap) => {
+      setActivities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AuditLog)));
+    });
+
+    // Stats counts
+    const unsubEmp = onSnapshot(collection(db, 'employees'), snap => {
+      const docs = snap.docs.map(d => d.data());
+      setStats(s => ({ ...s, employees: snap.size }));
+      const distMap: any = {};
+      docs.forEach((d: any) => distMap[d.department] = (distMap[d.department] || 0) + 1);
+      setHrDist(Object.keys(distMap).map(name => ({ name, total: distMap[name] })));
+    });
+
+    const unsubInv = onSnapshot(collection(db, 'inventory'), snap => {
+      const docs = snap.docs.map(d => d.data());
+      setStats(s => ({ 
+        ...s, 
+        inventory: snap.size,
+        lowStock: docs.filter((i: any) => i.status === 'low_stock' || i.status === 'out_of_stock').length
+      }));
+    });
+
+    const unsubTickets = onSnapshot(collection(db, 'tickets'), snap => {
+      const docs = snap.docs.map(d => d.data());
+      setStats(s => ({ ...s, tasks: docs.filter((t: any) => t.status !== 'closed' && t.status !== 'resolved').length }));
+    });
+
+    const unsubTrans = onSnapshot(collection(db, 'transactions'), snap => {
+      const docs = snap.docs.map(doc => doc.data());
+      const total = docs.reduce((acc, data: any) => {
+        if (data.status !== 'approved' && data.status !== 'paid') return acc;
+        const amount = Number(data.amount) || 0;
+        return data.type === 'income' ? acc + amount : acc - amount;
+      }, 0);
+      const pendingCount = docs.filter((d: any) => d.status === 'pending_approval' || d.status === 'pending').length;
+      setStats(s => ({ ...s, revenue: total || 0, pendingApprovals: pendingCount }));
+    });
+
+    return () => { unsubAct(); unsubEmp(); unsubInv(); unsubTickets(); unsubTrans(); };
+  }, []);
+
+  const data = activities.length > 0 ? [
+    { name: 'Log', receita: 4000, despesa: 2400 },
+  ] : [
+    { name: 'Jan', receita: 4000, despesa: 2400 },
+    { name: 'Fev', receita: 3000, despesa: 1398 },
+  ];
   return (
     <div className="space-y-8 pb-12">
-      <div>
-        <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">Visão Geral do Ecossistema</h2>
-        <p className="text-zinc-500">Acompanhe o desempenho de todos os departamentos em tempo real.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">Visão Geral do Ecossistema</h2>
+          <p className="text-zinc-500">Acompanhe o desempenho de todos os departamentos em tempo real.</p>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1 bg-zinc-100 rounded-full border border-zinc-200">
+           <div className="w-2 h-2 bg-zinc-400 rounded-full"></div>
+           <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Environment Live</span>
+        </div>
       </div>
+
+      {/* Action Center - Active Alerts */}
+      {(stats.pendingApprovals > 0 || stats.lowStock > 0 || stats.tasks > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <AnimatePresence>
+            {stats.pendingApprovals > 0 && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-center gap-4 group cursor-pointer hover:shadow-lg transition-all"
+              >
+                <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 scale-110">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-amber-900 leading-tight">Alçadas Pendentes</h4>
+                  <p className="text-xs text-amber-700 mt-0.5">Existem {stats.pendingApprovals} pagamentos aguardando sua revisão.</p>
+                </div>
+              </motion.div>
+            )}
+            {stats.tasks > 0 && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex items-center gap-4 group cursor-pointer hover:shadow-lg transition-all"
+              >
+                <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600 scale-110">
+                  <LifeBuoy className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-indigo-900 leading-tight">SLA em Alerta</h4>
+                  <p className="text-xs text-indigo-700 mt-0.5">Você tem {stats.tasks} chamados críticos na fila do Service Desk.</p>
+                </div>
+              </motion.div>
+            )}
+            {stats.lowStock > 0 && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                className="bg-rose-50 border border-rose-100 p-4 rounded-2xl flex items-center gap-4 group cursor-pointer hover:shadow-lg transition-all"
+              >
+                <div className="w-12 h-12 bg-rose-100 rounded-xl flex items-center justify-center text-rose-600 scale-110">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-rose-900 leading-tight">Estoque Crítico</h4>
+                  <p className="text-xs text-rose-700 mt-0.5">{stats.lowStock} itens estão abaixo da margem de segurança.</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
-          title="Receita Mensal" 
-          value={formatCurrency(124500.00)} 
-          change="+12.5%" 
+          title="Saldo em Caixa" 
+          value={formatCurrency(stats.revenue)} 
+          change={`${stats.revenue >= 0 ? '+' : ''}${((stats.revenue/1000).toFixed(1))}k`} 
           icon={DollarSign} 
           color="blue" 
         />
         <StatCard 
           title="Colaboradores" 
-          value="109" 
-          change="+3 este mês" 
+          value={stats.employees} 
+          change={`Setores: ${hrDist.length}`} 
           icon={Users} 
           color="emerald" 
         />
         <StatCard 
           title="Itens em Estoque" 
-          value="1,420" 
-          change="8 baixos" 
+          value={stats.inventory} 
+          change={stats.lowStock > 0 ? `${stats.lowStock} alertas` : 'Saudável'} 
           icon={Package} 
           color="amber" 
         />
         <StatCard 
-          title="Tarefas Pendentes" 
-          value="24" 
-          change="-4 desde ontem" 
-          icon={AlertCircle} 
+          title="Aprovações Pendentes" 
+          value={stats.pendingApprovals} 
+          change={stats.pendingApprovals > 0 ? "Ação Requerida" : "Em dia"} 
+          icon={ShieldCheck} 
           color="indigo" 
+        />
+        <StatCard 
+          title="Tickets Ativos" 
+          value={stats.tasks} 
+          change={stats.tasks > 0 ? `${stats.tasks} abertos` : "SLA limpo"} 
+          icon={LifeBuoy} 
+          color="rose" 
         />
       </div>
 
@@ -97,42 +217,43 @@ export default function Dashboard() {
           </div>
 
           <div className="mt-8 pt-6 border-t border-zinc-100 flex-1">
-            <h4 className="text-sm font-black text-zinc-400 uppercase tracking-widest mb-4">Atividade Entre-Sistemas</h4>
+            <h4 className="text-sm font-black text-zinc-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4" />
+              Sincronização de Auditoria
+            </h4>
             <div className="space-y-3">
-              <ActivityItem 
-                type="hr" 
-                msg="Novo colaborador Ana Silva contratada via módulo RH." 
-                impact="Impacto Financeiro: Salário R$ 8.5k/mês" 
-                time="2m atrás" 
-              />
-              <ActivityItem 
-                type="inventory" 
-                msg="Estoque de MacBook Pro atingiu nível crítico (4 un)." 
-                impact="Ação: Ordem de compra gerada p/ Financeiro" 
-                time="15m atrás" 
-              />
-              <ActivityItem 
-                type="finance" 
-                msg="Receita de R$ 12.5k processada via transação 88219." 
-                impact="Status: Paga e reconciliada" 
-                time="1h atrás" 
-              />
+              {activities.length > 0 ? activities.map((act) => (
+                <ActivityItem 
+                  key={act.id}
+                  type={
+                    act.resource === 'employees' ? 'hr' : 
+                    act.resource === 'transactions' ? 'finance' : 
+                    act.resource === 'tickets' ? 'tickets' :
+                    act.resource === 'inventory' ? 'inventory' : 'audit'
+                  } 
+                  msg={`${act.action.toUpperCase()}: ${act.resource}`} 
+                  impact={`Responsável: ${act.userName}`} 
+                  time={act.timestamp?.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) || 'Agora'} 
+                />
+              )) : (
+                <p className="text-xs text-zinc-400 text-center py-4">Nenhuma atividade de auditoria sincronizada.</p>
+              )}
             </div>
           </div>
         </div>
 
         {/* HR Distribution */}
-        <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
-          <h3 className="font-bold text-zinc-900 mb-8">Colaboradores por Setor</h3>
-          <div className="h-80">
+        <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm flex flex-col">
+          <h3 className="font-bold text-zinc-900 mb-8">Distribuição de Talentos</h3>
+          <div className="flex-1 min-h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={hrData} layout="vertical">
+              <BarChart data={hrDist.length > 0 ? hrDist : [{name: 'Sem Dados', total: 0}]} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#71717a'}} width={80} />
                 <Tooltip cursor={{fill: 'transparent'}} />
                 <Bar dataKey="total" radius={[0, 4, 4, 0]} barSize={20}>
-                  {hrData.map((entry, index) => (
+                  {hrDist.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Bar>
@@ -140,8 +261,8 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
           <div className="mt-4 pt-4 border-t border-zinc-100 flex items-center justify-between text-sm">
-            <span className="text-zinc-500 font-medium">Headcount Total:</span>
-            <span className="font-bold text-zinc-900">109</span>
+            <span className="text-zinc-500 font-medium">Headcount Ativo:</span>
+            <span className="font-bold text-zinc-900">{stats.employees}</span>
           </div>
         </div>
       </div>
@@ -153,14 +274,18 @@ function ActivityItem({ type, msg, impact, time }: any) {
   const icons: any = {
     hr: Users,
     inventory: Package,
-    finance: DollarSign
+    finance: DollarSign,
+    tickets: LifeBuoy,
+    audit: ShieldCheck
   };
   const colors: any = {
     hr: "text-blue-500 bg-blue-50 border-blue-100",
     inventory: "text-amber-500 bg-amber-50 border-amber-100",
-    finance: "text-emerald-500 bg-emerald-50 border-emerald-100"
+    finance: "text-emerald-500 bg-emerald-50 border-emerald-100",
+    tickets: "text-indigo-500 bg-indigo-50 border-indigo-100",
+    audit: "text-zinc-500 bg-zinc-50 border-zinc-100"
   };
-  const Icon = icons[type];
+  const Icon = icons[type] || icons.audit;
 
   return (
     <div className="flex items-start space-x-3 p-3 rounded-xl hover:bg-zinc-50 transition-colors border border-transparent hover:border-zinc-100">
@@ -184,6 +309,7 @@ function StatCard({ title, value, change, icon: Icon, color }: any) {
     emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
     amber: "bg-amber-50 text-amber-600 border-amber-100",
     indigo: "bg-indigo-50 text-indigo-600 border-indigo-100",
+    rose: "bg-rose-50 text-rose-600 border-rose-100",
   };
 
   return (
