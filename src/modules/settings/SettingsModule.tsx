@@ -84,9 +84,13 @@ export default function SettingsModule() {
       );
 
       toast.success('Configurações globais aplicadas com sucesso.');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast.error('Erro ao salvar as configurações.');
+      if (err.code === 'permission-denied') {
+        toast.error('Permissão insuficiente: Apenas administradores oficiais podem realizar esta alteração.');
+      } else {
+        toast.error('Erro inesperado ao salvar as configurações. Tente novamente.');
+      }
     } finally {
       setSaving(false);
     }

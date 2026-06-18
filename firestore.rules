@@ -82,5 +82,10 @@ service cloud.firestore {
       allow create: if isSignedIn();
       allow update, delete: if isAdminOrManager();
     }
+
+    // System Settings
+    match /system/config {
+      allow write: if isRole('ADMIN');
+    }
   }
 }
