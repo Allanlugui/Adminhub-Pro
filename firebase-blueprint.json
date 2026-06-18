@@ -1,0 +1,54 @@
+{
+  "collections": {
+    "employees": {
+      "fields": {
+        "name": "string",
+        "role": "string",
+        "department": "string",
+        "email": "string",
+        "salary": "number",
+        "status": "string",
+        "hiredAt": "timestamp"
+      }
+    },
+    "transactions": {
+      "fields": {
+        "title": "string",
+        "amount": "number",
+        "type": "string",
+        "category": "string",
+        "date": "timestamp",
+        "status": "string"
+      }
+    },
+    "inventory": {
+      "fields": {
+        "name": "string",
+        "sku": "string",
+        "quantity": "number",
+        "price": "number",
+        "category": "string",
+        "lastRestocked": "timestamp"
+      }
+    },
+    "tasks": {
+      "fields": {
+        "title": "string",
+        "description": "string",
+        "priority": "string",
+        "assignedTo": "string",
+        "status": "string",
+        "dueDate": "timestamp",
+        "createdAt": "timestamp"
+      }
+    },
+    "activityLog": {
+      "fields": {
+        "type": "string",
+        "message": "string",
+        "user": "string",
+        "timestamp": "timestamp"
+      }
+    }
+  }
+}
