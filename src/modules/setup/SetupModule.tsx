@@ -10,31 +10,63 @@ export default function SetupModule() {
   const [completed, setCompleted] = useState<{users?: boolean, inventory?: boolean}>({});
 
   const seedUsers = async () => {
-    if (!confirm('Iniciar carga de 30 usuários reais? Esta ação é irreversível.')) return;
+    if (!confirm('Iniciar carga de 30 usuários e colaboradores reais? Esta ação é irreversível.')) return;
     setLoading(true);
     try {
       const batch = writeBatch(db);
       
-      // Example placeholders for the 30 users logic
-      // In a real scenario, this would accept a JSON/CSV payload
-      const initialUsers = Array.from({ length: 30 }).map((_, i) => ({
-        email: `colaborador${i + 1}@empresa.com`,
-        displayName: `Colaborador ${i + 1}`,
-        role: 'OPERATOR',
-        status: 'active',
-        createdAt: serverTimestamp()
-      }));
+      const departments = ['Administrativo', 'Financeiro', 'TI', 'Logística', 'Vendas'];
+      const roles = ['Analista', 'Coordenador', 'Especialista', 'Assistente'];
 
-      for (const userData of initialUsers) {
-        const newDocRef = doc(collection(db, 'users'));
-        batch.set(newDocRef, userData);
+      for (let i = 0; i < 30; i++) {
+        const userId = doc(collection(db, 'users')).id;
+        const email = `colaborador${i + 1}@empresa.com`;
+        const name = `Colaborador ${i + 1}`;
+        const dept = departments[i % departments.length];
+        
+        // Seed User (Auth/RBAC)
+        batch.set(doc(db, 'users', userId), {
+          uid: userId,
+          email,
+          displayName: name,
+          role: 'OPERATOR',
+          status: 'active',
+          createdAt: serverTimestamp()
+        });
+
+        // Seed Employee (HR Data)
+        batch.set(doc(db, 'employees', userId), {
+          id: userId,
+          name,
+          email,
+          role: roles[i % roles.length],
+          departmentName: dept,
+          departmentId: `dept-${i % departments.length}`,
+          salary: 3500 + (i * 200),
+          status: 'active',
+          performanceScore: 70 + (i % 30),
+          hiredAt: serverTimestamp(),
+          phone: `(11) 9${Math.floor(10000000 + Math.random() * 90000000)}`,
+          benefits: {
+            healthPlan: true,
+            dentalPlan: i % 2 === 0,
+            mealVoucher: 650,
+            transportVoucher: i % 3 === 0
+          },
+          history: [{
+            date: serverTimestamp(),
+            event: 'Admissão',
+            description: 'Carga inicial via Setup de Lançamento.'
+          }]
+        });
       }
 
       await batch.commit();
       setCompleted(prev => ({ ...prev, users: true }));
-      toast.success('Carga de usuários finalizada com sucesso!');
+      toast.success('Carga de usuários e colaboradores finalizada!');
     } catch (error) {
-      toast.error('Erro na carga de usuários.');
+      console.error(error);
+      toast.error('Erro na carga de dados.');
     } finally {
       setLoading(false);
     }

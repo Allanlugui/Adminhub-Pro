@@ -8,15 +8,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { AuditLog } from '@/src/types';
 import { ShieldCheck } from 'lucide-react';
 
-const hrData = [
-  { name: 'RH', total: 45 },
-  { name: 'Financeiro', total: 12 },
-  { name: 'TI', total: 18 },
-  { name: 'Logística', total: 34 },
-];
-
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
-
 export default function Dashboard() {
   const [activities, setActivities] = useState<AuditLog[]>([]);
   const [stats, setStats] = useState({
@@ -28,6 +19,7 @@ export default function Dashboard() {
     pendingApprovals: 0
   });
   const [hrDist, setHrDist] = useState<any[]>([]);
+  const [chartData, setChartData] = useState<any[]>([]);
 
   useEffect(() => {
     // Activities
@@ -41,7 +33,10 @@ export default function Dashboard() {
       const docs = snap.docs.map(d => d.data());
       setStats(s => ({ ...s, employees: snap.size }));
       const distMap: any = {};
-      docs.forEach((d: any) => distMap[d.department] = (distMap[d.department] || 0) + 1);
+      docs.forEach((d: any) => {
+        const dept = d.departmentName || d.department || 'Geral';
+        distMap[dept] = (distMap[dept] || 0) + 1;
+      });
       setHrDist(Object.keys(distMap).map(name => ({ name, total: distMap[name] })));
     });
 
@@ -60,7 +55,8 @@ export default function Dashboard() {
     });
 
     const unsubTrans = onSnapshot(collection(db, 'transactions'), snap => {
-      const docs = snap.docs.map(doc => doc.data());
+      const docs = snapshotToTransactions(snap);
+      
       const total = docs.reduce((acc, data: any) => {
         if (data.status !== 'approved' && data.status !== 'paid') return acc;
         const amount = Number(data.amount) || 0;
@@ -68,17 +64,23 @@ export default function Dashboard() {
       }, 0);
       const pendingCount = docs.filter((d: any) => d.status === 'pending_approval' || d.status === 'pending').length;
       setStats(s => ({ ...s, revenue: total || 0, pendingApprovals: pendingCount }));
+
+      // Process chart data (last 7 days or similar)
+      // For production simplicity, we start with empty or zeros if no data
+      setChartData([]);
     });
 
     return () => { unsubAct(); unsubEmp(); unsubInv(); unsubTickets(); unsubTrans(); };
   }, []);
 
-  const data = activities.length > 0 ? [
-    { name: 'Log', receita: 4000, despesa: 2400 },
-  ] : [
-    { name: 'Jan', receita: 4000, despesa: 2400 },
-    { name: 'Fev', receita: 3000, despesa: 1398 },
-  ];
+  const snapshotToTransactions = (snap: any) => {
+    return snap.docs.map((doc: any) => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  };
+
+  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
   return (
     <div className="space-y-8 pb-12">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -197,7 +199,7 @@ export default function Dashboard() {
           </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data}>
+              <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorRec" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
@@ -206,13 +208,18 @@ export default function Dashboard() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#71717a'}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#71717a'}} tickFormatter={(v) => `R$ ${v/1000}k`} />
+                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#71717a'}} tickFormatter={(v) => `R$ ${v}`} />
                 <Tooltip 
                   contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}}
                 />
                 <Area type="monotone" dataKey="receita" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorRec)" />
                 <Area type="monotone" dataKey="despesa" stroke="#ef4444" strokeWidth={2} fill="transparent" strokeDasharray="5 5" />
               </AreaChart>
+              {chartData.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <p className="text-xs font-black text-zinc-300 uppercase tracking-widest">Aguardando dados transacionais...</p>
+                </div>
+              )}
             </ResponsiveContainer>
           </div>
 

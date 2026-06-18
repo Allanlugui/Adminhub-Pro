@@ -71,5 +71,16 @@ service cloud.firestore {
       );
       allow delete: if isAdminOrManager();
     }
+
+    // Support Collections
+    match /interactions/{id} {
+      allow create: if isSignedIn();
+      allow update, delete: if isAdminOrManager();
+    }
+
+    match /movements/{id} {
+      allow create: if isSignedIn();
+      allow update, delete: if isAdminOrManager();
+    }
   }
 }

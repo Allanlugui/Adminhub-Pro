@@ -5,15 +5,27 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Transaction, TransactionStatus, UserProfile } from '@/src/types';
 import { logAudit } from '@/src/lib/audit';
 import { pushNotification } from '@/src/lib/notifications';
-import { DollarSign, ArrowUpRight, ArrowDownLeft, Filter, Plus, Calendar, Tag, X, Check, ShieldAlert, FileText, Repeat, Upload, Paperclip, ExternalLink, Loader2, Download } from 'lucide-react';
+import { 
+  DollarSign, ArrowUpRight, ArrowDownLeft, Filter, Plus, Calendar, Tag, X, Check, 
+  ShieldAlert, FileText, Repeat, Upload, Paperclip, ExternalLink, Loader2, Download,
+  ChevronRight, TrendingUp, Clock, CheckCircle2, BarChart3, PieChart, Search
+} from 'lucide-react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  Cell, AreaChart, Area 
+} from 'recharts';
+import TransactionDetails from './components/TransactionDetails';
 import { formatCurrency, cn, convertToCSV, downloadCSV } from '@/src/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 
 export default function FinanceModule() {
+  const [activeTab, setActiveTab] = useState<'all' | 'pending_approval' | 'approved' | 'paid'>('all');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -121,16 +133,19 @@ export default function FinanceModule() {
     const transaction = transactions.find(t => t.id === id);
     if (!transaction) return;
 
-    if (userProfile?.role === 'OPERATOR' && (newStatus === 'approved' || newStatus === 'paid')) {
+    if ((userProfile?.role === 'OPERATOR') && (newStatus === 'approved' || newStatus === 'paid')) {
       toast.error('Privilégios insuficientes para aprovação.');
       return;
     }
 
     try {
-      await updateDoc(doc(db, 'transactions', id), { 
+      const updateData: any = { 
         status: newStatus,
         approvedBy: userProfile?.displayName || 'System'
-      });
+      };
+      if (newStatus === 'paid') updateData.paidAt = serverTimestamp();
+      
+      await updateDoc(doc(db, 'transactions', id), updateData);
       
       await logAudit('status_change', 'transactions', id, { 
         before: { status: transaction.status }, 
@@ -139,13 +154,12 @@ export default function FinanceModule() {
       
       toast.info(`Status atualizado para: ${newStatus.toUpperCase()}`);
       
+      if (selectedTransaction?.id === id) {
+        setSelectedTransaction(prev => prev ? { ...prev, ...updateData } : null);
+      }
+
       if (newStatus === 'approved' || newStatus === 'paid') {
         await pushNotification({
-          userId: transaction.requestedBy === 'System' ? undefined : (await (async () => {
-             // Ideally we'd find the user ID, but for now we notify the role or requester name
-             // For simplicity in this demo, we notify based on type
-             return undefined; 
-          })()),
           title: 'Transação Atualizada',
           message: `Sua solicitação "${transaction.title}" foi ${newStatus === 'approved' ? 'aprovada' : 'liquidada'}.`,
           type: 'finance',
@@ -154,19 +168,6 @@ export default function FinanceModule() {
       }
     } catch (error) {
       toast.error('Falha na atualização do fluxo.');
-    }
-  };
-
-  const handleDeleteTransaction = async (id: string, title: string) => {
-    const transaction = transactions.find(t => t.id === id);
-    if (!id || !confirm(`Remover registro de "${title}"? Esta operação será registrada no log de auditoria.`)) return;
-    try {
-      await deleteDoc(doc(db, 'transactions', id));
-      await logAudit('delete', 'transactions', id, { before: transaction });
-      toast.info('Transação removida.');
-    } catch (error) {
-      console.error("Erro ao excluir:", error);
-      toast.error('Erro ao excluir registro.');
     }
   };
 
@@ -184,348 +185,377 @@ export default function FinanceModule() {
   const dashboardStats = {
     income: transactions.filter(t => t.type === 'income' && (t.status === 'approved' || t.status === 'paid')).reduce((acc, t) => acc + (Number(t.amount) || 0), 0),
     expense: transactions.filter(t => t.type === 'expense' && (t.status === 'approved' || t.status === 'paid')).reduce((acc, t) => acc + (Number(t.amount) || 0), 0),
-    pending: transactions.filter(t => t.status === 'pending_approval').length
+    pending: transactions.filter(t => t.status === 'pending_approval').length,
+    pendingAmount: transactions.filter(t => t.status === 'pending_approval').reduce((acc, t) => acc + (Number(t.amount) || 0), 0),
   };
 
-  const getStatusBadge = (status: TransactionStatus) => {
-    switch (status) {
-      case 'paid': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
-      case 'approved': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'pending_approval': return 'bg-amber-100 text-amber-800 border-amber-200';
-      case 'cancelled': return 'bg-zinc-100 text-zinc-500 border-zinc-200 line-through';
-      default: return 'bg-zinc-100 text-zinc-800 border-zinc-200';
-    }
-  };
+  const filteredTransactions = transactions.filter(tx => {
+    const matchesSearch = (tx.title || tx.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         tx.category.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesTab = activeTab === 'all' || tx.status === activeTab;
+    return matchesSearch && matchesTab;
+  });
+
+  const chartData = [
+    { name: 'Seg', receita: 4000, despesa: 2400 },
+    { name: 'Ter', receita: 3000, despesa: 1398 },
+    { name: 'Qua', receita: 2000, despesa: 9800 },
+    { name: 'Qui', receita: 2780, despesa: 3908 },
+    { name: 'Sex', receita: 1890, despesa: 4800 },
+    { name: 'Sáb', receita: 2390, despesa: 3800 },
+    { name: 'Dom', receita: 3490, despesa: 4300 },
+  ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-zinc-900 tracking-tight flex items-center gap-2">
-            <DollarSign className="w-7 h-7 text-emerald-600" />
-            Finanças & Fluxo de Aprovação
-          </h2>
-          <p className="text-zinc-500 mt-1">Gestão de alçadas e tesouraria para o grupo inicial de 30 colaboradores.</p>
+    <div className="space-y-8 pb-12 h-screen flex flex-col">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-1 flex-shrink-0">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-black text-zinc-900 tracking-tight flex items-center gap-3">
+             <DollarSign className="w-8 h-8 text-indigo-600" />
+             Gestão Financeira Enterprise
+          </h1>
+          <p className="text-zinc-500 font-bold uppercase text-[10px] tracking-[0.2em]">Fluxo de Caixa • Auditoria • Aprovações Multinível</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {dashboardStats.pending > 0 && (
-            <div className="hidden lg:flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-100 rounded-xl text-amber-700 animate-pulse">
-              <ShieldAlert className="w-4 h-4" />
-              <span className="text-xs font-bold">{dashboardStats.pending} Aprovações Pendentes</span>
-            </div>
-          )}
+        <div className="flex gap-3">
           <button 
             onClick={handleExportCSV}
-            className="flex items-center space-x-2 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-600 px-5 py-2.5 rounded-xl transition-all shadow-sm active:scale-95"
+            className="bg-zinc-100 text-zinc-600 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-zinc-200 transition-all flex items-center gap-2"
           >
-            <Download className="w-5 h-5" />
-            <span className="font-bold">Exportar CSV</span>
+            <Download className="w-4 h-4" /> Exportar Dados
           </button>
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center space-x-2 bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-zinc-900/10 active:scale-95"
+            className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 flex items-center gap-3 active:scale-95"
           >
-            <Plus className="w-5 h-5" />
-            <span className="font-bold">Novo Lançamento</span>
+            <Plus className="w-5 h-5" /> Nova Solicitação
           </button>
         </div>
       </div>
 
+      {/* Analytics Dashboard Strip */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-shrink-0">
+        <div className="lg:col-span-2 bg-white rounded-[2.5rem] p-8 border border-zinc-200 shadow-sm flex flex-col md:flex-row gap-8 items-center">
+           <div className="space-y-6 w-full md:w-1/3">
+              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center gap-4">
+                 <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white">
+                    <ArrowUpRight className="w-5 h-5" />
+                 </div>
+                 <div>
+                    <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Receita Acumulada</p>
+                    <p className="text-lg font-black text-emerald-900">{formatCurrency(dashboardStats.income)}</p>
+                 </div>
+              </div>
+              <div className="p-4 bg-rose-50 rounded-2xl border border-rose-100 flex items-center gap-4">
+                 <div className="w-10 h-10 bg-rose-500 rounded-xl flex items-center justify-center text-white">
+                    <ArrowDownLeft className="w-5 h-5" />
+                 </div>
+                 <div>
+                    <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest">Despesa Acumulada</p>
+                    <p className="text-lg font-black text-rose-900">{formatCurrency(dashboardStats.expense)}</p>
+                 </div>
+              </div>
+           </div>
+           
+           <div className="flex-1 h-32 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                 <AreaChart data={chartData}>
+                    <defs>
+                       <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                       </linearGradient>
+                    </defs>
+                    <Area type="monotone" dataKey="receita" stroke="#10b981" fillOpacity={1} fill="url(#colorIncome)" strokeWidth={3} />
+                    <Area type="monotone" dataKey="despesa" stroke="#f43f5e" fill="transparent" strokeWidth={2} strokeDasharray="5 5" />
+                 </AreaChart>
+              </ResponsiveContainer>
+           </div>
+        </div>
+
+        <div className="bg-zinc-900 rounded-[2.5rem] p-8 text-white relative overflow-hidden flex flex-col justify-between shadow-2xl shadow-zinc-900/20">
+           <TrendingUp className="absolute top-[-20%] right-[-10%] w-64 h-64 text-white/5 rotate-12" />
+           <div className="relative z-10">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 mb-2">Pendente de Alçada</p>
+              <h3 className="text-4xl font-black">{formatCurrency(dashboardStats.pendingAmount)}</h3>
+              <p className="text-[10px] font-bold text-white/60 mt-1 uppercase tracking-widest">{dashboardStats.pending} solicitações aguardando</p>
+           </div>
+           <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 flex items-center justify-between relative z-10 border border-white/10">
+              <div className="flex items-center gap-3">
+                 <Clock className="w-5 h-5 text-amber-400" />
+                 <span className="text-xs font-bold uppercase tracking-widest">Auditoria em Tempo Real</span>
+              </div>
+              <ChevronRight className="w-5 h-5 opacity-40" />
+           </div>
+        </div>
+      </div>
+
+      {/* Main Workspace: Master-Detail Split */}
+      <div className="flex gap-6 flex-1 min-h-0">
+        {/* Table Master List */}
+        <div className={cn(
+          "bg-white rounded-[2rem] border border-zinc-200 shadow-sm flex flex-col overflow-hidden transition-all duration-500",
+          selectedTransaction ? "flex-1" : "w-full"
+        )}>
+          <div className="p-4 border-b border-zinc-100 flex flex-col sm:flex-row justify-between items-center bg-zinc-50/50 gap-4">
+             <div className="flex gap-2 overflow-x-auto w-full sm:w-auto pb-2 sm:pb-0">
+                {['all', 'pending_approval', 'approved', 'paid'].map((tab) => (
+                   <button 
+                     key={tab}
+                     onClick={() => setActiveTab(tab as any)}
+                     className={cn(
+                        "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all whitespace-nowrap",
+                        activeTab === tab ? "bg-zinc-900 text-white border-zinc-900 shadow-lg shadow-zinc-900/10" : "bg-white text-zinc-500 border-zinc-200 hover:border-zinc-300"
+                     )}
+                   >
+                      {tab === 'all' ? 'Ver Tudo' : tab.replace('_', ' ')}
+                   </button>
+                ))}
+             </div>
+             <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
+                <input 
+                  type="text" 
+                  placeholder="ID, Título, Categoria..." 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-sm border border-zinc-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/5 bg-white"
+                />
+             </div>
+          </div>
+
+          <div className="overflow-auto flex-1">
+             <table className="w-full text-left border-separate border-spacing-0">
+                <thead className="sticky top-0 z-20 bg-zinc-50 shadow-[0_1px_0_0_rgba(228,228,231,1)]">
+                   <tr className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                      <th className="px-6 py-4">Transação</th>
+                      <th className="px-6 py-4">Centro / Custo</th>
+                      <th className="px-6 py-4">Vencimento</th>
+                      <th className="px-6 py-4">Status</th>
+                      <th className="px-6 py-4 text-right">Valor</th>
+                   </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-50">
+                   {filteredTransactions.map((tx) => (
+                      <tr 
+                        key={tx.id} 
+                        onClick={() => setSelectedTransaction(tx)}
+                        className={cn(
+                           "group cursor-pointer transition-all",
+                           selectedTransaction?.id === tx.id ? "bg-indigo-50/50 shadow-inner" : "hover:bg-zinc-50"
+                        )}
+                      >
+                         <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                               <div className={cn(
+                                 "w-10 h-10 rounded-xl flex items-center justify-center border transition-all",
+                                 tx.type === 'expense' ? "bg-rose-50 text-rose-500 border-rose-100" : "bg-emerald-50 text-emerald-500 border-emerald-100"
+                               )}>
+                                  {tx.type === 'expense' ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
+                               </div>
+                               <div>
+                                  <p className="text-sm font-black text-zinc-900 leading-tight">{tx.title || tx.description}</p>
+                                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-tight">{tx.category}</p>
+                               </div>
+                            </div>
+                         </td>
+                         <td className="px-6 py-4">
+                            <span className="text-[10px] font-black uppercase text-zinc-500 bg-zinc-100 px-2 py-1 rounded-md border border-zinc-200">
+                               {tx.costCenter || 'Geral'}
+                            </span>
+                         </td>
+                         <td className="px-6 py-4">
+                            <p className="text-sm font-bold text-zinc-700">18/06/2026</p>
+                            <p className="text-[10px] font-black text-zinc-400 uppercase">Amanhã</p>
+                         </td>
+                         <td className="px-6 py-4">
+                            <span className={cn(
+                               "inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all",
+                               tx.status === 'paid' ? "bg-emerald-50 text-emerald-600 border-emerald-100" :
+                               tx.status === 'approved' ? "bg-indigo-50 text-indigo-600 border-indigo-100" :
+                               tx.status === 'pending_approval' ? "bg-amber-50 text-amber-600 border-amber-100 shadow-sm shadow-amber-200/50 animate-pulse" :
+                               "bg-zinc-100 text-zinc-500 border-zinc-200"
+                            )}>
+                               {tx.status === 'paid' ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <Clock className="w-3 h-3 mr-1" />}
+                               {tx.status.replace('_', ' ')}
+                            </span>
+                         </td>
+                         <td className="px-6 py-4 text-right">
+                            <p className={cn(
+                               "text-lg font-black tracking-tight",
+                               tx.type === 'expense' ? "text-rose-600" : "text-emerald-600"
+                            )}>
+                               {tx.type === 'expense' ? '-' : '+'} {formatCurrency(tx.amount)}
+                            </p>
+                         </td>
+                      </tr>
+                   ))}
+                   {!filteredTransactions.length && (
+                      <tr>
+                        <td colSpan={5} className="py-24 text-center">
+                           <DollarSign className="w-12 h-12 text-zinc-100 mx-auto mb-4" />
+                           <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Nenhuma transação encontrada nesta vista</p>
+                        </td>
+                      </tr>
+                   )}
+                </tbody>
+             </table>
+          </div>
+        </div>
+
+        {/* Dynamic Detail Sidepane */}
+        <AnimatePresence>
+          {selectedTransaction && (
+            <motion.div 
+               initial={{ opacity: 0, x: 50, width: 0 }}
+               animate={{ opacity: 1, x: 0, width: '32rem' }}
+               exit={{ opacity: 0, x: 50, width: 0 }}
+               className="overflow-hidden flex-shrink-0"
+            >
+               <TransactionDetails 
+                  transaction={selectedTransaction} 
+                  onClose={() => setSelectedTransaction(null)}
+                  userRole={userProfile?.role}
+                  onApprove={(id) => handleUpdateStatus(id, 'approved')}
+                  onReject={(id) => handleUpdateStatus(id, 'cancelled')}
+                  onPay={(id) => handleUpdateStatus(id, 'paid')}
+               />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Modern Creation Modal */}
       <AnimatePresence>
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setIsModalOpen(false)}
-              className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm"
+              className="absolute inset-0 bg-zinc-900/60 backdrop-blur-md"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              initial={{ scale: 0.95, opacity: 0, y: 30 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white rounded-3xl w-full max-w-lg shadow-2xl relative z-10 overflow-hidden"
+              exit={{ scale: 0.95, opacity: 0, y: 30 }}
+              className="bg-white rounded-[3rem] w-full max-w-xl shadow-2xl relative z-10 overflow-hidden border border-zinc-200"
             >
-              <div className="p-8 border-b border-zinc-100 flex items-center justify-between bg-zinc-50">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white rotate-3">
-                    <DollarSign className="w-6 h-6" />
+              <div className="p-8 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-600/20">
+                    <Plus className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="font-black text-zinc-900">Registro de Transação</h3>
-                    <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-black">Fluxo Administrativo de Alçada</p>
+                    <h3 className="text-xl font-black text-zinc-900">Novo Lançamento Financeiro</h3>
+                    <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-black">Fluxo Autorizativo de Governança</p>
                   </div>
                 </div>
+                <button onClick={() => setIsModalOpen(false)} className="p-3 hover:bg-zinc-200 rounded-full text-zinc-400 transition-colors">
+                   <X className="w-6 h-6" />
+                </button>
               </div>
 
-              <form onSubmit={handleAddTransaction} className="p-8 space-y-5">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block ml-1">Descrição do Lançamento</label>
-                  <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20" />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block ml-1">Valor Final (R$)</label>
-                    <input required type="number" step="0.01" value={formData.amount} onChange={e => setFormData({...formData, amount: parseFloat(e.target.value)})} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block ml-1">Modalidade</label>
-                    <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as any})} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm outline-none">
-                      <option value="income">Entrada (Income)</option>
-                      <option value="expense">Saída (Expense)</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block ml-1">Categoria Fiscal</label>
-                    <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm outline-none">
-                      <option>Serviços</option>
-                      <option>Infraestrutura</option>
-                      <option>Tecnologia</option>
-                      <option>Salários</option>
-                      <option>Suprimentos</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block ml-1">Centro de Custo</label>
-                    <select value={formData.costCenter} onChange={e => setFormData({...formData, costCenter: e.target.value})} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm outline-none">
-                      <option>Administrativo</option>
-                      <option>Vendas</option>
-                      <option>TI / Engenharia</option>
-                      <option>Logística</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 p-3 bg-zinc-50 border border-zinc-100 rounded-xl">
-                  <input 
-                    type="checkbox" 
-                    checked={formData.isRecurring} 
-                    onChange={e => setFormData({...formData, isRecurring: e.target.checked})}
-                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <div className="flex-1">
-                    <span className="text-[10px] font-black text-zinc-600 uppercase tracking-tight">Lançamento Recorrente</span>
-                    <p className="text-[9px] text-zinc-400">Automatizar este lançamento nos próximos meses.</p>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block ml-1">Comprovante / Anexo (PDF/IMG)</label>
-                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className={cn(
-                      "group relative border-2 border-dashed rounded-xl p-4 transition-all cursor-pointer flex flex-col items-center justify-center gap-2",
-                      selectedFile ? "border-emerald-500 bg-emerald-50/30" : "border-zinc-200 hover:border-emerald-400 hover:bg-zinc-50"
-                    )}
-                  >
+              <form onSubmit={handleAddTransaction} className="p-8 space-y-6">
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">Título do Favorecido / Origem</label>
                     <input 
-                      type="file" 
-                      ref={fileInputRef}
-                      onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                      className="hidden" 
-                      accept=".pdf,image/*"
+                      required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} 
+                      placeholder="Ex: Pagamento AWS Cloud Services"
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all" 
                     />
-                    {uploading ? (
-                      <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
-                    ) : selectedFile ? (
-                      <>
-                        <Paperclip className="w-8 h-8 text-emerald-600" />
-                        <span className="text-xs font-bold text-emerald-700 truncate max-w-full px-4">{selectedFile.name}</span>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
-                          className="absolute top-2 right-2 p-1 rounded-full bg-white border border-emerald-100 text-emerald-600 hover:bg-emerald-100"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="w-8 h-8 text-zinc-300 group-hover:text-emerald-400 transition-colors" />
-                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Clique para anexar documento</span>
-                      </>
-                    )}
-                  </div>
-                </div>
+                 </div>
+                 
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">Valor Bruto (R$)</label>
+                       <input 
+                         required type="number" step="0.01" value={formData.amount} onChange={e => setFormData({...formData, amount: parseFloat(e.target.value)})} 
+                         className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all" 
+                       />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">Modalidade</label>
+                       <select 
+                         value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as any})} 
+                         className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none"
+                       >
+                          <option value="expense">Saída (Despesa)</option>
+                          <option value="income">Entrada (Receita)</option>
+                       </select>
+                    </div>
+                 </div>
 
-                <button 
-                  type="submit" 
-                  disabled={uploading}
-                  className="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {uploading ? 'Processando Documentos...' : 'Confirmar & Processar'}
-                </button>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">Centro de Custo</label>
+                       <select value={formData.costCenter} onChange={e => setFormData({...formData, costCenter: e.target.value})} className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none">
+                          <option>Administrativo</option>
+                          <option>TI / Infraestrutura</option>
+                          <option>Operacional</option>
+                          <option>Vendas</option>
+                          <option>Logística</option>
+                       </select>
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">Categoria Fiscal</label>
+                       <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none">
+                          <option>Serviços</option>
+                          <option>Licenças de Software</option>
+                          <option>Manutenção</option>
+                          <option>Equipamentos</option>
+                          <option>Impostos</option>
+                       </select>
+                    </div>
+                 </div>
+
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">Anexar Nota Fiscal / Recibo</label>
+                    <div 
+                      onClick={() => fileInputRef.current?.click()}
+                      className={cn(
+                        "group relative border-2 border-dashed rounded-[2rem] p-6 transition-all cursor-pointer flex flex-col items-center justify-center gap-3",
+                        selectedFile ? "border-indigo-500 bg-indigo-50/50 shadow-inner" : "border-zinc-200 hover:border-indigo-400 hover:bg-zinc-50"
+                      )}
+                    >
+                      <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                        className="hidden" 
+                        accept=".pdf,image/*"
+                      />
+                      {uploading ? (
+                        <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
+                      ) : selectedFile ? (
+                        <>
+                          <Paperclip className="w-10 h-10 text-indigo-600" />
+                          <span className="text-xs font-black text-indigo-900 truncate max-w-[80%] uppercase">{selectedFile.name}</span>
+                          <p className="text-[10px] font-bold text-indigo-400">Clique para trocar arquivo</p>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-10 h-10 text-zinc-200 group-hover:text-indigo-400 transition-all" />
+                          <div className="text-center">
+                             <p className="text-[11px] font-black text-zinc-400 uppercase tracking-widest">Arraste ou Selecione Documento</p>
+                             <p className="text-[9px] text-zinc-300 font-bold uppercase mt-1">PDF, JPG ou PNG • Máx 10MB</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                 </div>
+
+                 <button 
+                   type="submit" 
+                   disabled={uploading}
+                   className="w-full bg-zinc-900 text-white font-black uppercase tracking-[0.2em] text-[11px] py-5 rounded-[2rem] hover:bg-black transition-all shadow-2xl shadow-zinc-900/30 active:scale-95 disabled:opacity-50"
+                 >
+                    {uploading ? 'Processando Documentos...' : 'Lançar no Ledger Corporativo'}
+                 </button>
               </form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-5">
-            <DollarSign className="w-16 h-16" />
-          </div>
-          <p className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-1">Tesouraria Atual</p>
-          <p className="text-3xl font-black text-zinc-900">{formatCurrency(dashboardStats.income - dashboardStats.expense)}</p>
-          <div className="mt-4 pt-4 border-t border-zinc-50 flex items-center text-xs text-zinc-400 font-medium">
-            <Calendar className="w-3 h-3 mr-1" /> Fluxo conciliado em tempo real
-          </div>
-        </div>
-        <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100 shadow-sm">
-          <p className="text-xs font-black text-emerald-600 uppercase tracking-widest mb-1">Aprovadas (Entradas)</p>
-          <p className="text-3xl font-black text-emerald-700">{formatCurrency(dashboardStats.income)}</p>
-          <div className="mt-4 flex items-center text-[10px] text-emerald-500 font-black uppercase tracking-tight">
-            <ArrowUpRight className="w-4 h-4 mr-1" /> Receita Auditada
-          </div>
-        </div>
-        <div className="bg-red-50 p-6 rounded-2xl border border-red-100 shadow-sm">
-          <p className="text-xs font-black text-red-600 uppercase tracking-widest mb-1">Comprometidas (Saídas)</p>
-          <p className="text-3xl font-black text-red-700">{formatCurrency(dashboardStats.expense)}</p>
-          <div className="mt-4 flex items-center text-[10px] text-red-500 font-black uppercase tracking-tight">
-            <ArrowDownLeft className="w-4 h-4 mr-1" /> Despesa Validada
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
-          <div>
-            <h3 className="font-black text-zinc-900 uppercase tracking-tight text-sm">Ledger Corporativo</h3>
-            <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-widest">Controle de alçadas logado</p>
-          </div>
-          <button className="flex items-center space-x-2 text-zinc-500 hover:text-zinc-700 text-[10px] font-black uppercase tracking-widest bg-white px-3 py-2 rounded-lg border border-zinc-200 shadow-sm">
-            <Filter className="w-4 h-4" />
-            <span>Filtros Avançados</span>
-          </button>
-        </div>
-        
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-zinc-100 bg-zinc-50/50">
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Origem/Alvo</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-center">Setor</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Data</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-right">Valor Auditado</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-center">Status Transacional</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-right">Aprovação</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-50">
-              {transactions.map((t, idx) => (
-                <motion.tr 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: idx * 0.02 }}
-                  key={t.id} 
-                  className="hover:bg-zinc-50/50 transition-colors"
-                >
-                  <td className="px-6 py-4">
-                    <div className="flex items-center space-x-3">
-                      <div className={cn(
-                        "w-9 h-9 rounded-lg flex items-center justify-center border",
-                        t.type === 'income' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-red-50 text-red-600 border-red-100"
-                      )}>
-                        {t.type === 'income' ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-zinc-900 leading-tight">{t.title}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <p className="text-[10px] text-zinc-400 flex items-center gap-1">
-                            <Tag className="w-2 h-2" /> {t.category} 
-                            {t.isRecurring && <Repeat className="w-2 h-2 ml-1 text-blue-500" />}
-                          </p>
-                          {t.attachmentUrl && (
-                            <a 
-                              href={t.attachmentUrl} 
-                              target="_blank" 
-                              rel="noreferrer"
-                              className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded hover:bg-indigo-100 transition-colors"
-                            >
-                              <Paperclip className="w-2 h-2" />
-                              Ver Anexo
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <span className="text-[10px] font-black uppercase bg-zinc-100 text-zinc-600 px-2.5 py-1 rounded-md border border-zinc-200">
-                      {t.costCenter}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <p className="text-xs font-semibold text-zinc-700">{t.date.toLocaleDateString('pt-BR')}</p>
-                    <p className="text-[10px] text-zinc-400">{t.date.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}</p>
-                  </td>
-                  <td className={cn(
-                    "px-6 py-4 text-sm font-black text-right",
-                    t.type === 'income' ? "text-emerald-600" : "text-red-600"
-                  )}>
-                    {t.type === 'income' ? '+' : '-'} {formatCurrency(t.amount)}
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <span className={cn(
-                      "px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border",
-                      getStatusBadge(t.status)
-                    )}>
-                      {t.status.replace('_', ' ')}
-                    </span>
-                    {t.approvedBy && (
-                      <p className="text-[8px] text-zinc-400 mt-1 uppercase font-bold">Por: {t.approvedBy}</p>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end space-x-1">
-                      {t.status === 'pending_approval' && (userProfile?.role === 'ADMIN' || userProfile?.role === 'MANAGER') && (
-                        <>
-                          <button 
-                            onClick={() => t.id && handleUpdateStatus(t.id, 'approved')}
-                            className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white border border-emerald-100 rounded-lg transition-all"
-                            title="Aprovar Lançamento"
-                          >
-                            <Check className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => t.id && handleUpdateStatus(t.id, 'cancelled')}
-                            className="p-1.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-100 rounded-lg transition-all"
-                            title="Reprovar Lançamento"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                      
-                      {t.status === 'approved' && (userProfile?.role === 'ADMIN' || userProfile?.role === 'MANAGER') && (
-                        <button 
-                          onClick={() => t.id && handleUpdateStatus(t.id, 'paid')}
-                          className="px-3 py-1.5 bg-zinc-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-zinc-800 transition-all shadow-md active:scale-95 flex items-center gap-1.5"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          Liquidado
-                        </button>
-                      )}
-
-                      {(userProfile?.role === 'ADMIN') && (
-                        <button 
-                          onClick={() => t.id && handleDeleteTransaction(t.id, t.title)}
-                          className="p-1.5 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </motion.tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 }

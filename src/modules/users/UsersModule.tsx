@@ -3,16 +3,23 @@ import { db } from '@/src/lib/firebase';
 import { collection, query, onSnapshot, doc, updateDoc, setDoc, serverTimestamp, orderBy } from 'firebase/firestore';
 import { UserProfile, UserRole } from '@/src/types';
 import { logAudit } from '@/src/lib/audit';
-import { Shield, UserPlus, Search, UserCheck, UserMinus, ShieldAlert, Key, MoreHorizontal } from 'lucide-react';
-import { cn } from '@/src/lib/utils';
+import { 
+  Shield, UserPlus, Search, UserCheck, UserMinus, ShieldAlert, 
+  Key, MoreHorizontal, Download, Smartphone, LayoutList, 
+  ChevronRight, ArrowRight, Zap, History, Lock,
+  FileSpreadsheet, ShieldCheck
+} from 'lucide-react';
+import { cn, convertToCSV, downloadCSV } from '@/src/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
+import SecurityWidget from './components/SecurityWidget';
 
 export default function UsersModule() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [formData, setFormData] = useState({
     email: '',
     displayName: '',
@@ -22,11 +29,34 @@ export default function UsersModule() {
   useEffect(() => {
     const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setUsers(snapshot.docs.map(doc => ({ ...doc.data() } as UserProfile)));
+      const usersData = snapshot.docs.map(doc => ({ ...doc.data() } as UserProfile));
+      setUsers(usersData);
       setLoading(false);
+
+      if (selectedUser) {
+        const updated = usersData.find(u => u.uid === selectedUser.uid);
+        if (updated) setSelectedUser(updated);
+      }
     });
     return () => unsubscribe();
-  }, []);
+  }, [selectedUser?.uid]);
+
+  const handleExportMatrix = () => {
+    const data = users.map(u => ({
+      Nome: u.displayName,
+      Email: u.email,
+      Role: u.role,
+      Status: u.status,
+      MFA: u.mfaEnabled ? 'Ativo' : 'Inativo',
+      'Financeiro View': u.permissions?.finance?.view ? 'Sim' : 'Não',
+      'Financeiro Approve': u.permissions?.finance?.approve ? 'Sim' : 'Não',
+      'Estoque Adjust': u.permissions?.inventory?.adjust ? 'Sim' : 'Não',
+      'Criado em': u.createdAt?.toDate ? u.createdAt.toDate().toISOString() : '---'
+    }));
+    const csv = convertToCSV(data);
+    downloadCSV(csv, `matriz-acessos-${new Date().toISOString().split('T')[0]}.csv`);
+    toast.success('Matriz de acessos exportada para auditoria.');
+  };
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,19 +110,28 @@ export default function UsersModule() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-zinc-900 tracking-tight flex items-center gap-2">
-            <Shield className="w-7 h-7 text-indigo-600" />
-            Usuários & Acesso (RBAC)
+          <h2 className="text-2xl font-black text-zinc-900 tracking-tight flex items-center gap-2">
+            <Shield className="w-8 h-8 text-indigo-600" />
+            Governance & Access (RBAC)
           </h2>
-          <p className="text-zinc-500 mt-1">Gestão de privilégios e controle de segurança para os 30 colaboradores iniciais.</p>
+          <p className="text-zinc-500 mt-1 font-medium text-sm">Diretório de Segurança Enterprise • Bit-Audit Ativo</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-zinc-900 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-zinc-800 transition-all active:scale-95 shadow-lg shadow-zinc-900/10"
-        >
-          <UserPlus className="w-4 h-4" />
-          Novo Onboarding
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={handleExportMatrix}
+            className="bg-white text-zinc-600 border border-zinc-200 px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-zinc-50 transition-all active:scale-95"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Matriz de Acessos
+          </button>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-zinc-900 text-white px-5 py-2.5 rounded-xl font-black text-sm flex items-center gap-2 hover:bg-zinc-800 transition-all active:scale-95 shadow-xl shadow-zinc-900/10"
+          >
+            <UserPlus className="w-4 h-4" />
+            Novo Onboarding
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
@@ -100,78 +139,110 @@ export default function UsersModule() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
           <input 
             type="text" 
-            placeholder="Filtrar colaboradores por nome ou email..."
+            placeholder="Buscar por nome, email ou nível de acesso..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+            className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
           />
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="border-b border-zinc-100 bg-zinc-50/50">
-              <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Colaborador</th>
-              <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Nível de Acesso</th>
-              <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Status</th>
-              <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Segurança</th>
-              <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-right">Ações</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-50">
-            {filteredUsers.map((user) => (
-              <tr key={user.uid} className={cn("hover:bg-zinc-50/50 transition-colors", user.status === 'disabled' && "opacity-60")}>
-                <td className="px-6 py-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 font-bold">
-                      {user.displayName.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-zinc-900 leading-tight">{user.displayName}</p>
-                      <p className="text-xs text-zinc-500">{user.email}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className={cn(
-                    "px-2.5 py-1 rounded-md text-[10px] font-black uppercase border tracking-tight",
-                    user.role === 'ADMIN' ? "bg-red-50 text-red-600 border-red-100" :
-                    user.role === 'MANAGER' ? "bg-amber-50 text-amber-600 border-amber-100" :
-                    "bg-blue-50 text-blue-600 border-blue-100"
-                  )}>
-                    {user.role}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-1.5">
-                    <div className={cn("w-2 h-2 rounded-full", user.status === 'active' ? "bg-emerald-500" : "bg-red-500")}></div>
-                    <span className="text-xs font-semibold text-zinc-700 capitalize">{user.status === 'active' ? 'Ativo' : 'Suspenso'}</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  {user.mustChangePassword && (
-                    <div className="flex items-center gap-1 text-amber-600">
-                      <Key className="w-3 h-3" />
-                      <span className="text-[10px] font-bold">Reset de Senha Pendente</span>
-                    </div>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <button 
-                    onClick={() => handleToggleStatus(user)}
-                    className={cn(
-                      "p-2 rounded-lg transition-all",
-                      user.status === 'active' ? "hover:bg-red-50 text-zinc-400 hover:text-red-500" : "hover:bg-emerald-50 text-zinc-400 hover:text-emerald-500"
-                    )}
-                  >
-                    {user.status === 'active' ? <UserMinus className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
-                  </button>
-                </td>
+      {/* Main Container: Split Master-Detail */}
+      <div className={cn(
+        "flex gap-6 min-h-0",
+        selectedUser ? "grid grid-cols-1 xl:grid-cols-2" : "grid grid-cols-1"
+      )}>
+        {/* Left Side: Master Directory */}
+        <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden h-fit">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-zinc-100 bg-zinc-50/50">
+                <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest leading-none">Usuário / ID</th>
+                <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest leading-none">Level</th>
+                <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest leading-none">Status</th>
+                <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest leading-none">MFA</th>
+                <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-right leading-none">Control</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-zinc-50">
+              {filteredUsers.map((user) => (
+                <tr 
+                  key={user.uid} 
+                  onClick={() => setSelectedUser(user)}
+                  className={cn(
+                    "hover:bg-zinc-50/50 transition-all cursor-pointer group", 
+                    user.status === 'disabled' && "opacity-40 grayscale",
+                    selectedUser?.uid === user.uid && "bg-indigo-50/30"
+                  )}
+                >
+                  <td className="px-6 py-5">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-zinc-900 rounded-xl flex items-center justify-center text-white font-black text-xs shadow-lg shadow-zinc-900/10 group-hover:scale-105 transition-transform">
+                        {user.displayName.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-zinc-900 uppercase tracking-tight">{user.displayName}</p>
+                        <p className="text-[10px] text-zinc-500 font-bold">{user.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <span className={cn(
+                      "px-2.5 py-1 rounded-md text-[9px] font-black uppercase border tracking-widest",
+                      user.role === 'ADMIN' ? "bg-red-50 text-red-600 border-red-100" :
+                      user.role === 'MANAGER' ? "bg-amber-50 text-amber-600 border-amber-100" :
+                      "bg-blue-50 text-blue-600 border-blue-100"
+                    )}>
+                      {user.role}
+                    </span>
+                  </td>
+                  <td className="px-6 py-5">
+                    <div className="flex items-center gap-1.5">
+                      <div className={cn("w-2 h-2 rounded-full", user.status === 'active' ? "bg-emerald-500" : "bg-red-500")}></div>
+                      <span className="text-[10px] font-black text-zinc-700 uppercase tracking-tight">{user.status === 'active' ? 'Ativo' : 'Suspenso'}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <div className={cn(
+                      "flex items-center gap-1",
+                      user.mfaEnabled ? "text-emerald-600" : "text-zinc-300"
+                    )}>
+                      <Smartphone className="w-3.5 h-3.5" />
+                      <span className="text-[9px] font-black uppercase">{user.mfaEnabled ? 'On' : 'Off'}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-5 text-right">
+                    <ChevronRight className={cn(
+                      "w-5 h-5 text-zinc-300 ml-auto transition-transform",
+                      selectedUser?.uid === user.uid && "translate-x-1 text-indigo-600"
+                    )} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filteredUsers.length === 0 && (
+            <div className="p-20 text-center bg-zinc-50/30">
+               <ShieldAlert className="w-10 h-10 text-zinc-200 mx-auto mb-4" />
+               <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Nenhum registro de acesso compatível</p>
+            </div>
+          )}
+        </div>
+
+        {/* Right Side: Security Detail Widget */}
+        <AnimatePresence mode="wait">
+          {selectedUser && (
+            <motion.div 
+               initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }}
+               className="h-full"
+            >
+               <SecurityWidget 
+                 user={selectedUser} 
+                 onClose={() => setSelectedUser(null)} 
+               />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Modal Onboarding */}

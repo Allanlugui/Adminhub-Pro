@@ -7,16 +7,29 @@ import { pushNotification } from '@/src/lib/notifications';
 import { 
   LifeBuoy, Search, Plus, Filter, Clock, User, 
   CheckCircle2, AlertCircle, MessageSquare, 
-  MoreVertical, X, Shield, ArrowRight, Tag, Hash, Download
+  MoreVertical, X, Shield, ArrowRight, Tag, Hash, Download,
+  LayoutList, LayoutDashboard, Columns, Monitor, Settings,
+  Calendar, Zap, TrendingUp, BarChart3, ChevronRight,
+  ArrowUpRight
 } from 'lucide-react';
 import { cn, convertToCSV, downloadCSV } from '@/src/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
+import TicketWorkspace from './components/TicketWorkspace';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
+  ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area
+} from 'recharts';
+
+type ViewMode = 'list' | 'kanban';
 
 export default function TicketsModule() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [showAnalytics, setShowAnalytics] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
     title: '',
@@ -25,8 +38,9 @@ export default function TicketsModule() {
     priority: 'medium' as TicketPriority
   });
 
+  const statuses: TicketStatus[] = ['open', 'in_progress', 'waiting', 'resolved', 'closed'];
+
   useEffect(() => {
-    // RBAC: Fetch User Profile
     const fetchProfile = async () => {
       const user = auth.currentUser;
       if (user) {
@@ -46,9 +60,15 @@ export default function TicketsModule() {
         updatedAt: doc.data().updatedAt?.toDate() || new Date()
       } as Ticket));
       setTickets(docs);
+      
+      // Keep selected ticket in sync if open
+      if (selectedTicket) {
+        const updated = docs.find(t => t.id === selectedTicket.id);
+        if (updated) setSelectedTicket(updated);
+      }
     });
     return () => unsubscribe();
-  }, []);
+  }, [selectedTicket?.id]);
 
   const generateProtocol = () => {
     const year = new Date().getFullYear();
@@ -159,180 +179,314 @@ export default function TicketsModule() {
 
   const filteredTickets = tickets.filter(t => 
     t.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    t.protocol.toLowerCase().includes(searchTerm.toLowerCase())
+    t.protocol.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    t.requesterName.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const analyticsData = {
+    byCategory: [
+      { name: 'Hardware', value: tickets.filter(t => t.category === 'IT').length },
+      { name: 'Sistemas', value: tickets.filter(t => t.category === 'System').length },
+      { name: 'Manutenção', value: tickets.filter(t => t.category === 'Maintenance').length },
+      { name: 'RH', value: tickets.filter(t => t.category === 'HR').length },
+    ],
+    volumeDaily: [
+      { day: 'Seg', volume: 12 },
+      { day: 'Ter', volume: 19 },
+      { day: 'Qua', volume: 15 },
+      { day: 'Qui', volume: 22 },
+      { day: 'Sex', volume: 30 },
+      { day: 'Sab', volume: 8 },
+      { day: 'Dom', volume: 5 },
+    ]
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col h-full space-y-6">
+      {/* Header Central de Operações */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-zinc-900 tracking-tight flex items-center gap-2">
-            <LifeBuoy className="w-7 h-7 text-indigo-600" />
-            Central de Serviços (Tickets)
+            <LifeBuoy className="w-8 h-8 text-indigo-600" />
+            ServiceDesk Enterprise
           </h2>
-          <p className="text-zinc-500 text-sm font-medium">Gestão de chamados e SLAs corporativos.</p>
+          <p className="text-zinc-500 text-sm font-medium">Mesa de Operações Integrada • SLA 99.9%</p>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex items-center bg-zinc-100 p-1 rounded-xl border border-zinc-200">
+            <button 
+              onClick={() => setViewMode('list')}
+              className={cn(
+                "p-2 rounded-lg transition-all",
+                viewMode === 'list' ? "bg-white text-indigo-600 shadow-sm" : "text-zinc-400 hover:text-zinc-600"
+              )}
+            >
+              <LayoutList className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => setViewMode('kanban')}
+              className={cn(
+                "p-2 rounded-lg transition-all",
+                viewMode === 'kanban' ? "bg-white text-indigo-600 shadow-sm" : "text-zinc-400 hover:text-zinc-600"
+              )}
+            >
+              <Columns className="w-4 h-4" />
+            </button>
+          </div>
           <button 
-            onClick={handleExportCSV}
-            className="flex items-center space-x-2 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-600 px-5 py-2.5 rounded-xl transition-all shadow-sm active:scale-95 text-sm"
+            onClick={() => setShowAnalytics(!showAnalytics)}
+            className={cn(
+              "p-2.5 rounded-xl border transition-all",
+              showAnalytics ? "bg-indigo-600 text-white border-indigo-500 shadow-lg" : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50"
+            )}
           >
-            <Download className="w-4 h-4" />
-            <span className="font-bold">Exportar CSV</span>
+            <BarChart3 className="w-4 h-4" />
           </button>
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="bg-zinc-900 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-zinc-800 transition-all shadow-lg active:scale-95"
+            className="bg-zinc-900 text-white px-5 py-2.5 rounded-xl font-black text-sm flex items-center gap-2 hover:bg-zinc-800 transition-all shadow-xl active:scale-95"
           >
             <Plus className="w-4 h-4" />
-            Abrir Chamado
+             Novo Chamado
           </button>
         </div>
       </div>
+
+      {/* Analytics Dashboard (Collapsible) */}
+      <AnimatePresence>
+        {showAnalytics && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-zinc-50 p-6 rounded-3xl border border-zinc-200">
+               <div className="bg-white p-6 rounded-2xl border border-zinc-100 shadow-sm">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-6">Volume por Categoria</h4>
+                  <div className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={analyticsData.byCategory}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#A1A1AA' }} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#A1A1AA' }} />
+                        <Tooltip 
+                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                        />
+                        <Bar dataKey="value" fill="#4F46E5" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+               </div>
+               <div className="bg-white p-6 rounded-2xl border border-zinc-100 shadow-sm">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-6">Demanda Semanal</h4>
+                  <div className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={analyticsData.volumeDaily}>
+                        <defs>
+                          <linearGradient id="colorVol" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.1}/>
+                            <stop offset="95%" stopColor="#4F46E5" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                        <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#A1A1AA' }} />
+                        <Area type="monotone" dataKey="volume" stroke="#4F46E5" strokeWidth={3} fillOpacity={1} fill="url(#colorVol)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+               </div>
+               <div className="bg-zinc-900 p-6 rounded-2xl shadow-xl shadow-zinc-900/10 text-white flex flex-col justify-between">
+                  <div>
+                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-2">MTTR (Média de Resolução)</h4>
+                    <div className="text-4xl font-black flex items-baseline gap-2">
+                       3.4 <span className="text-sm text-zinc-500">Horas</span>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                     <div className="flex items-center justify-between text-[10px] font-black uppercase">
+                        <span className="text-zinc-500">Saúde do SLA</span>
+                        <span className="text-emerald-400">Excelente (98.2%)</span>
+                     </div>
+                     <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-emerald-500 h-full w-[98.2%]" />
+                     </div>
+                  </div>
+               </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
           <input 
             type="text" 
-            placeholder="Buscar por protocolo, título ou solicitante..."
+            placeholder="Protocolo, Solicitante ou Título do Chamado..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
           />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-        <div className="xl:col-span-3 space-y-4">
-          {filteredTickets.map((ticket, idx) => (
+      {/* Main Workspace: Split Master-Detail */}
+      <div className={cn(
+        "flex-1 flex gap-6 min-h-0",
+        selectedTicket ? "grid grid-cols-1 xl:grid-cols-2" : "grid grid-cols-1"
+      )}>
+        {/* Left Side: Work Queue */}
+        <div className="flex flex-col gap-4 overflow-hidden h-full">
+           {viewMode === 'list' ? (
+             <div className="space-y-4 overflow-y-auto pr-2 pb-20 custom-scrollbar">
+                {filteredTickets.map((ticket, idx) => (
+                  <motion.div 
+                    layoutId={`ticket-${ticket.id}`}
+                    key={ticket.id}
+                    onClick={() => setSelectedTicket(ticket)}
+                    className={cn(
+                      "bg-white border p-5 rounded-3xl transition-all cursor-pointer group shadow-sm",
+                      selectedTicket?.id === ticket.id ? "border-indigo-600 ring-4 ring-indigo-500/5 bg-zinc-50/30" : "border-zinc-200 hover:border-indigo-200"
+                    )}
+                  >
+                     <div className="flex items-start justify-between">
+                        <div className="flex gap-4">
+                           <div className={cn(
+                             "w-12 h-12 rounded-2xl flex items-center justify-center border shrink-0 transition-transform group-hover:scale-105",
+                             getStatusStyle(ticket.status)
+                           )}>
+                              {ticket.status === 'resolved' || ticket.status === 'closed' ? <CheckCircle2 className="w-6 h-6" /> : <Clock className="w-6 h-6" />}
+                           </div>
+                           <div>
+                              <div className="flex items-center gap-2 mb-2">
+                                 <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded tracking-widest uppercase border border-indigo-100">
+                                    {ticket.protocol}
+                                 </span>
+                                 <span className={cn(
+                                   "text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border",
+                                   ticket.priority === 'critical' ? "bg-red-50 text-red-600 border-red-100" :
+                                   ticket.priority === 'high' ? "bg-orange-50 text-orange-600 border-orange-100" :
+                                   "bg-zinc-50 text-zinc-500 border-zinc-100"
+                                 )}>
+                                    {ticket.priority}
+                                 </span>
+                              </div>
+                              <h3 className="font-black text-zinc-900 group-hover:text-indigo-600 transition-colors uppercase tracking-tight leading-tight">
+                                {ticket.title}
+                              </h3>
+                              <div className="flex items-center gap-4 mt-4">
+                                <div className="flex items-center gap-1.5 text-[9px] font-black text-zinc-400 uppercase tracking-tight bg-zinc-50 px-2 py-1 rounded-lg">
+                                  <User className="w-3 h-3" /> {ticket.requesterName}
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[9px] font-black text-zinc-400 uppercase tracking-tight bg-zinc-50 px-2 py-1 rounded-lg">
+                                  <Tag className="w-3 h-3" /> {ticket.category}
+                                </div>
+                              </div>
+                           </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2 text-right">
+                           {/* SLA Indicator */}
+                           <div className="flex items-center gap-2 mb-2">
+                              <span className="text-[8px] font-black text-zinc-400 uppercase">SLA Saúde</span>
+                              <div className="w-16 h-1 rounded-full bg-zinc-100 overflow-hidden">
+                                 <div className="bg-emerald-500 h-full w-[80%]" />
+                              </div>
+                           </div>
+                           <ChevronRight className={cn(
+                             "w-5 h-5 text-zinc-300 transition-all",
+                             selectedTicket?.id === ticket.id ? "translate-x-1 text-indigo-600" : "group-hover:translate-x-1"
+                           )} />
+                        </div>
+                     </div>
+                  </motion.div>
+                ))}
+             </div>
+           ) : (
+             <div className="flex gap-6 overflow-x-auto pb-4 h-full custom-scrollbar">
+                {statuses.map(status => (
+                  <div key={status} className="flex-shrink-0 w-80 flex flex-col gap-4">
+                     <div className="flex items-center justify-between px-2">
+                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                          {status.replace('_', ' ')}
+                        </h4>
+                        <span className="bg-zinc-100 text-zinc-500 px-2 py-1 rounded-lg text-[10px] font-bold">
+                           {tickets.filter(t => t.status === status).length}
+                        </span>
+                     </div>
+                     <div className="flex-1 bg-zinc-50/50 rounded-3xl border border-dashed border-zinc-200 p-3 space-y-3 overflow-y-auto max-h-[calc(100vh-400px)]">
+                        {tickets.filter(t => t.status === status).map(ticket => (
+                           <motion.div 
+                             layoutId={`ticket-${ticket.id}`}
+                             key={ticket.id}
+                             onClick={() => setSelectedTicket(ticket)}
+                             className={cn(
+                               "bg-white p-4 rounded-2xl border transition-all cursor-pointer shadow-sm hover:border-indigo-200 group ring-indigo-500/5 hover:ring-4",
+                               selectedTicket?.id === ticket.id ? "border-indigo-600" : "border-zinc-200"
+                             )}
+                           >
+                              <span className={cn(
+                                "text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded border inline-block mb-2",
+                                ticket.priority === 'critical' ? "bg-red-50 text-red-600 border-red-100" : "bg-zinc-50 text-zinc-500 border-zinc-100"
+                              )}>
+                                 {ticket.priority}
+                              </span>
+                              <h5 className="text-[11px] font-black text-zinc-900 group-hover:text-indigo-600 transition-all uppercase leading-tight line-clamp-2">{ticket.title}</h5>
+                              <div className="mt-4 flex items-center justify-between">
+                                 <div className="flex items-center gap-1.5 text-[8px] font-black text-zinc-400 uppercase">
+                                    <User className="w-2.5 h-2.5" /> {ticket.requesterName.split(' ')[0]}
+                                 </div>
+                                 <div className="flex items-center gap-1.5 text-[8px] font-black text-zinc-300 uppercase">
+                                    <Clock className="w-2.5 h-2.5" /> 2h
+                                 </div>
+                              </div>
+                           </motion.div>
+                        ))}
+                     </div>
+                  </div>
+                ))}
+             </div>
+           )}
+        </div>
+
+        {/* Right Side: Ticket Workspace (Detail) */}
+        <AnimatePresence>
+          {selectedTicket && (
             <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.05 }}
-              key={ticket.id}
-              className="bg-white border border-zinc-200 rounded-2xl p-5 hover:border-indigo-200 transition-all group shadow-sm"
+              initial={{ x: 20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 20, opacity: 0 }}
+              className="hidden xl:block h-full overflow-hidden"
             >
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-4">
-                  <div className={cn(
-                    "w-12 h-12 rounded-xl flex items-center justify-center border shrink-0",
-                    getStatusStyle(ticket.status)
-                  )}>
-                    {ticket.status === 'resolved' || ticket.status === 'closed' ? <CheckCircle2 className="w-6 h-6" /> : <Clock className="w-6 h-6" />}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded tracking-widest uppercase">
-                        {ticket.protocol}
-                      </span>
-                      <span className={cn("text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border", getStatusStyle(ticket.status))}>
-                        {ticket.status.replace('_', ' ')}
-                      </span>
-                    </div>
-                    <h3 className="font-bold text-zinc-900 group-hover:text-indigo-600 transition-colors uppercase tracking-tight">
-                      {ticket.title}
-                    </h3>
-                    <p className="text-xs text-zinc-500 line-clamp-1 mt-1">{ticket.description}</p>
-                    
-                    <div className="flex items-center gap-4 mt-4">
-                      <div className="flex items-center gap-1.5 text-[10px] font-black text-zinc-400 uppercase tracking-tight">
-                        <Tag className="w-3 h-3" /> {ticket.category}
-                      </div>
-                      <div className={cn("flex items-center gap-1.5 text-[10px] font-black uppercase tracking-tight", getPriorityStyle(ticket.priority))}>
-                        <AlertCircle className="w-3 h-3" /> Prioridade {ticket.priority}
-                      </div>
-                      <div className="flex items-center gap-1.5 text-[10px] font-black text-zinc-400 uppercase tracking-tight">
-                        <User className="w-3 h-3" /> {ticket.requesterName}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col items-end gap-2">
-                  <div className="flex gap-1">
-                    {ticket.status === 'open' && (
-                      <button 
-                        onClick={() => handleUpdateStatus(ticket.id!, 'in_progress')}
-                        className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 transition-all"
-                      >
-                        Atender
-                      </button>
-                    )}
-                    {(ticket.status === 'in_progress' || ticket.status === 'waiting') && (
-                      <button 
-                        onClick={() => handleUpdateStatus(ticket.id!, 'resolved')}
-                        className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all"
-                      >
-                        Resolver
-                      </button>
-                    )}
-                    {ticket.status === 'resolved' && (
-                      <button 
-                        onClick={() => handleUpdateStatus(ticket.id!, 'closed')}
-                        className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 bg-zinc-100 text-zinc-500 rounded-lg hover:bg-zinc-200 transition-all"
-                      >
-                        Fechar
-                      </button>
-                    )}
-                  </div>
-                  <span className="text-[10px] font-bold text-zinc-400">
-                    {ticket.createdAt.toLocaleDateString('pt-BR')} {ticket.createdAt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
-                  </span>
-                </div>
-              </div>
+               <TicketWorkspace 
+                 ticket={selectedTicket} 
+                 onClose={() => setSelectedTicket(null)}
+                 userProfile={userProfile}
+               />
             </motion.div>
-          ))}
-
-          {filteredTickets.length === 0 && (
-            <div className="bg-zinc-50 border-2 border-dashed border-zinc-200 rounded-3xl p-20 flex flex-col items-center justify-center text-center">
-              <LifeBuoy className="w-12 h-12 text-zinc-300 mb-4" />
-              <h3 className="font-bold text-zinc-900">Nenhum ticket encontrado</h3>
-              <p className="text-sm text-zinc-500 mt-1">Busque por outros termos ou abra um novo chamado.</p>
-            </div>
           )}
-        </div>
+        </AnimatePresence>
 
-        <div className="space-y-6">
-          <div className="bg-zinc-900 rounded-3xl p-6 text-white shadow-xl shadow-zinc-900/20">
-            <h3 className="font-black uppercase tracking-widest text-xs mb-4 text-zinc-400">Visão Geral (SLA)</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-zinc-300">Abertos</span>
-                <span className="text-xl font-black">{tickets.filter(t => t.status === 'open').length}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-zinc-300">Em Atendimento</span>
-                <span className="text-xl font-black text-amber-400">{tickets.filter(t => t.status === 'in_progress').length}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-zinc-300">Resolvidos</span>
-                <span className="text-xl font-black text-emerald-400">{tickets.filter(t => t.status === 'resolved' || t.status === 'closed').length}</span>
-              </div>
-            </div>
-            <div className="mt-6 pt-6 border-t border-zinc-800">
-              <button className="w-full text-xs font-black uppercase tracking-widest text-indigo-400 hover:text-indigo-300 transition-colors flex items-center justify-center gap-2">
-                Relatórios Completos <ArrowRight className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-3xl border border-zinc-200 p-6 shadow-sm">
-            <h3 className="font-black uppercase tracking-widest text-xs mb-4 text-zinc-400">Setores Ativos</h3>
-            <div className="space-y-3">
-              {['IT', 'Maintenance', 'HR', 'Purchasing', 'System'].map(cat => (
-                <div key={cat} className="flex items-center justify-between group cursor-pointer">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-indigo-500" />
-                    <span className="text-sm font-bold text-zinc-700 group-hover:text-indigo-600 transition-colors uppercase tracking-tight">{cat === 'System' ? 'Suporte / Bug' : cat}</span>
-                  </div>
-                  <span className="text-xs font-black text-zinc-400">{tickets.filter(t => t.category === cat).length}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        {/* Mobile Detail Overlay */}
+        <AnimatePresence>
+          {selectedTicket && (
+            <motion.div 
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="xl:hidden fixed inset-0 z-[60] bg-white p-4 pt-12 overflow-hidden"
+            >
+               <TicketWorkspace 
+                 ticket={selectedTicket} 
+                 onClose={() => setSelectedTicket(null)}
+                 userProfile={userProfile}
+               />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+
 
       {/* Modal Novo Ticket */}
       <AnimatePresence>
