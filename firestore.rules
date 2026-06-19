@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isRole(role) {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == role;
+    }
+
+    function isAdminOrManager() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role in ['ADMIN', 'MANAGER'];
+    }
+
+    // Default: allow all authenticated users to read and create
+    // This ensures snapshot listeners don't fail, while protecting updates/deletes
+    match /{document=**} {
+      allow read: if isSignedIn();
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (request.auth.uid == userId || isRole('ADMIN'));
+      allow delete: if isRole('ADMIN');
+    }
+
+    // Core Business Collections
+    match /employees/{employeeId} {
+      allow write: if isAdminOrManager();
+    }
+
+    match /transactions/{transactionId} {
+      allow create: if isSignedIn();
+      // Protect status changes: only Managers/Admins can approve or liquidate
+      allow update: if isAdminOrManager() || (request.resource.data.status == resource.data.status);
+      allow delete: if isRole('ADMIN');
+    }
+
+    match /inventory/{itemId} {
+      allow write: if isAdminOrManager();
+    }
+
+    match /tickets/{ticketId} {
+      allow create: if isSignedIn();
+      // Allow updates to status by Managers/Admins or the Requester
+      allow update: if isAdminOrManager() || request.auth.uid == resource.data.requesterId;
+      allow delete: if isRole('ADMIN');
+    }
+
+    // Audit Logs
+    match /auditLogs/{logId} {
+      allow create: if isSignedIn();
+      allow update, delete: if false; 
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || 
+        resource.data.role == getUserData().role ||
+        isAdminOrManager()
+      );
+      allow delete: if isAdminOrManager();
+    }
+
+    // Support Collections
+    match /interactions/{id} {
+      allow create: if isSignedIn();
+      allow update, delete: if isAdminOrManager();
+    }
+
+    match /movements/{id} {
+      allow create: if isSignedIn();
+      allow update, delete: if isAdminOrManager();
+    }
+
+    // System Settings
+    match /system/config {
+      allow write: if request.auth.token.admin == true;
+    }
+  }
+}
