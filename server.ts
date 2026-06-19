@@ -8,13 +8,22 @@ import axios from "axios";
 import firebaseConfig from "./firebase-applet-config.json" assert { type: "json" };
 
 // Initialize Firebase Admin
-if (getApps().length === 0) {
-  initializeApp({
-    projectId: firebaseConfig.projectId,
-  });
+let app: any;
+try {
+  if (getApps().length === 0) {
+    app = initializeApp({
+      projectId: firebaseConfig.projectId,
+    });
+    console.log(`[AdminHub] Firebase Admin initialized for project: ${firebaseConfig.projectId}`);
+  } else {
+    app = getApps()[0];
+  }
+} catch (error) {
+  console.error("[AdminHub] Critical failure initializing Firebase Admin:", error);
 }
 
-const db = getFirestore(firebaseConfig.firestoreDatabaseId);
+// Explicitly pass the app reference and database ID
+const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 async function startServer() {
   const app = express();
@@ -25,6 +34,17 @@ async function startServer() {
   // CORS configuration for integrations
   // Allows the AdminHub to be reached by external systems like the store or Nexus
   app.use("/api/integration", cors());
+
+  // Logging middleware for debugging integrations
+  app.use("/api/integration", (req, res, next) => {
+    console.log(`[AdminHub Inbound] ${req.method} ${req.url}`);
+    next();
+  });
+
+  // Health check for integrations
+  app.get("/api/integration/ping", (req, res) => {
+    res.json({ status: "alive", timestamp: new Date().toISOString() });
+  });
 
   // --- AUTH MIDDLEWARE FOR INTEGRATIONS ---
   // This middleware verifies the secret shared key (X-API-Key)
@@ -37,19 +57,24 @@ async function startServer() {
 
     // 2. Fallback to DB
     if (!requiredKey) {
-      const configSnap = await db.collection('system').doc('config').get();
-      if (configSnap.exists) {
-        requiredKey = configSnap.data()?.integrations?.adminHubApiKey;
+      try {
+        const configSnap = await db.collection('system').doc('config').get();
+        if (configSnap.exists) {
+          requiredKey = configSnap.data()?.integrations?.adminHubApiKey;
+        }
+      } catch (dbError) {
+        console.error("[AdminHub Auth] Error fetching config from Firestore:", dbError);
+        // If Firestore fails (e.g. Project ID error), we can't fall back
       }
     }
 
     if (!requiredKey) {
-      console.error("[Auth] ADMINHUB_API_KEY is not defined in environment or database.");
+      console.error("[AdminHub Auth] ADMINHUB_API_KEY is not defined in environment or database.");
       return res.status(500).json({ error: "Server authentication misconfigured." });
     }
 
     if (providedKey !== requiredKey) {
-      console.warn(`[Auth] Unauthorized access attempt with key: ${providedKey?.substring(0, 8)}...`);
+      console.warn(`[AdminHub Auth] Unauthorized access attempt with key prefix: ${providedKey?.substring(0, 8)}...`);
       return res.status(401).json({ error: "Unauthorized: Invalid or missing API Key." });
     }
     next();
@@ -183,6 +208,7 @@ async function startServer() {
 
       // Fallback to DB
       if (!nexusUrl || !nexusKey) {
+        console.log("[AdminHub] Attempting to fetch Nexus config from Firestore...");
         const configSnap = await db.collection('system').doc('config').get();
         if (configSnap.exists) {
           const config = configSnap.data();
@@ -191,11 +217,15 @@ async function startServer() {
         }
       }
 
+      console.log(`[AdminHub] Outbound Sync Attempt for: ${employeeData.name}`);
+
       if (!nexusUrl || !nexusKey) {
-        console.warn("[HR Outbound] Nexus credentials missing in Env and DB. Simulating successful sync.");
+        console.warn("[AdminHub] Nexus credentials missing in Env and DB. Simulating successful sync.");
         await new Promise(r => setTimeout(r, 800));
         return res.status(200).json({ status: "success", message: "Simulated sync (Missing Config)" });
       }
+
+      console.log(`[AdminHub] Calling Nexus API: ${nexusUrl}/employees`);
 
       await axios.post(`${nexusUrl}/employees`, employeeData, {
         headers: { 
@@ -204,12 +234,18 @@ async function startServer() {
         }
       });
       
-      console.log("[HR Outbound] Successfully synced with Nexus:", employeeData.name);
+      console.log(`[AdminHub] Successfully synced with Nexus: ${employeeData.name}`);
       res.status(200).json({ status: "success", message: "Data synced with Nexus ERP" });
-    } catch (error) {
-      console.error("[HR Outbound] Error syncing with Nexus:", error);
+    } catch (error: any) {
+      const status = error.response?.status;
+      const data = error.response?.data;
+      console.error(`[AdminHub] Outbound Sync Error (${status || 'UNKNOWN'}):`, data || error.message);
+      
       // Fallback: Even if sync fails, we return 200 to not block the UI but log the error
-      res.status(200).json({ status: "warning", message: "Employee created but Nexus sync failed." });
+      res.status(200).json({ 
+        status: "warning", 
+        message: `Employee created but Nexus sync failed (${status || 'error'}).` 
+      });
     }
   });
 
