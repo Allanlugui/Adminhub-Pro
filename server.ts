@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { initializeApp, getApps } from "firebase-admin/app";
 import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
@@ -20,8 +21,14 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
+  
+  // CORS configuration for integrations
+  // Allows the AdminHub to be reached by external systems like the store or Nexus
+  app.use("/api/integration", cors());
 
   // --- AUTH MIDDLEWARE FOR INTEGRATIONS ---
+  // This middleware verifies the secret shared key (X-API-Key)
+  // treating valid requests as "Trusted Origin" without requiring user session
   const apiKeyMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const providedKey = req.header("X-API-Key");
     
@@ -42,6 +49,7 @@ async function startServer() {
     }
 
     if (providedKey !== requiredKey) {
+      console.warn(`[Auth] Unauthorized access attempt with key: ${providedKey?.substring(0, 8)}...`);
       return res.status(401).json({ error: "Unauthorized: Invalid or missing API Key." });
     }
     next();
