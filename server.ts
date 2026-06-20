@@ -245,6 +245,7 @@ async function startServer() {
       await axios.post(endpoint, employeeData, {
         headers: { 
           "Authorization": `Bearer ${nexusKey}`,
+          "x-api-key": nexusKey,
           "Content-Type": "application/json"
         }
       });
