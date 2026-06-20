@@ -40,8 +40,14 @@ export default function Login() {
     } catch (err: any) {
       if (err.code === 'auth/operation-not-allowed') {
         setError('Erro: O provedor de E-mail/Senha precisa ser ativado no Console do Firebase.');
+      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+        setError('E-mail ou senha incorretos, ou a conta não existe. Se este for o seu primeiro acesso ao sistema, clique em "Primeiro acesso? Criar conta de administrador" logo abaixo para cadastrar seu usuário.');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setError('Este endereço de e-mail já está em uso por outro usuário.');
+      } else if (err.code === 'auth/weak-password') {
+        setError('A senha deve conter pelo menos 6 caracteres.');
       } else {
-        setError('Credenciais inválidas ou erro de conexão.');
+        setError('Credenciais inválidas ou erro de conexão com o servidor de autenticação.');
       }
       console.error(err);
     } finally {

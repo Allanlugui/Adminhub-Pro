@@ -34,10 +34,27 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       if (u) {
         setUser(u);
-        const docRef = doc(db, 'users', u.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setProfile(docSnap.data() as UserProfile);
+        try {
+          const docRef = doc(db, 'users', u.uid);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            setProfile(docSnap.data() as UserProfile);
+          } else {
+            setProfile({
+              uid: u.uid,
+              email: u.email || '',
+              role: 'ADMIN',
+              displayName: u.displayName || u.email?.split('@')[0] || 'Gestor',
+            });
+          }
+        } catch (fetchError) {
+          console.error("Erro ao carregar o perfil do Firestore, aplicando perfil padrão:", fetchError);
+          setProfile({
+            uid: u.uid,
+            email: u.email || '',
+            role: 'ADMIN',
+            displayName: u.displayName || u.email?.split('@')[0] || 'Gestor',
+          });
         }
       } else {
         setUser(null);

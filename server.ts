@@ -225,9 +225,24 @@ async function startServer() {
         return res.status(200).json({ status: "success", message: "Simulated sync (Missing Config)" });
       }
 
-      console.log(`[AdminHub] Calling Nexus API: ${nexusUrl}/employees`);
+      let endpoint = nexusUrl;
+      // Dynamically determine the endpoint. If NEXUS_BASE_URL already contains the full path/resource, use it.
+      const hasSpecificResource = endpoint.includes("/employees") || 
+                                  endpoint.includes("/nexus") || 
+                                  endpoint.includes("/hr") || 
+                                  endpoint.endsWith("/employee");
+      
+      if (!hasSpecificResource) {
+        if (endpoint.endsWith("/")) {
+          endpoint += "employees";
+        } else {
+          endpoint += "/employees";
+        }
+      }
 
-      await axios.post(`${nexusUrl}/employees`, employeeData, {
+      console.log(`[AdminHub] Calling Nexus API: ${endpoint}`);
+
+      await axios.post(endpoint, employeeData, {
         headers: { 
           "Authorization": `Bearer ${nexusKey}`,
           "Content-Type": "application/json"
