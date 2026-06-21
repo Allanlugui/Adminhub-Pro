@@ -18,6 +18,11 @@ service cloud.firestore {
       return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role in ['ADMIN', 'MANAGER'];
     }
 
+    function isApiAuthorized() {
+      return request.resource.data.apiKey != null && 
+             request.resource.data.apiKey == get(/databases/$(database)/documents/system/config).data.integrations.adminHubApiKey;
+    }
+
     // Default: allow all authenticated users to read and create
     // This ensures snapshot listeners don't fail, while protecting updates/deletes
     match /{document=**} {
@@ -26,20 +31,20 @@ service cloud.firestore {
 
     // User Profiles
     match /users/{userId} {
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && (request.auth.uid == userId || isRole('ADMIN'));
+      allow create: if isSignedIn() || isApiAuthorized();
+      allow update: if (isSignedIn() && (request.auth.uid == userId || isRole('ADMIN'))) || isApiAuthorized();
       allow delete: if isRole('ADMIN');
     }
 
     // Core Business Collections
     match /employees/{employeeId} {
-      allow write: if isAdminOrManager();
+      allow write: if isAdminOrManager() || isApiAuthorized();
     }
 
     match /transactions/{transactionId} {
-      allow create: if isSignedIn();
+      allow create: if isSignedIn() || isApiAuthorized();
       // Protect status changes: only Managers/Admins can approve or liquidate
-      allow update: if isAdminOrManager() || (request.resource.data.status == resource.data.status);
+      allow update: if isAdminOrManager() || isApiAuthorized() || (request.resource.data.status == resource.data.status);
       allow delete: if isRole('ADMIN');
     }
 
@@ -56,7 +61,7 @@ service cloud.firestore {
 
     // Audit Logs
     match /auditLogs/{logId} {
-      allow create: if isSignedIn();
+      allow create: if isSignedIn() || isApiAuthorized();
       allow update, delete: if false; 
     }
 

@@ -137,6 +137,7 @@ const apiKeyMiddleware = async (req: express.Request, res: express.Response, nex
         userId: 'system-integration-unauthorized',
         userName: 'Unauthorized API Access Attempt',
         timestamp: serverTimestamp(),
+        apiKey: requiredKey,
         changes: {
           before: { status: "unauthorized" },
           after: { 
@@ -157,6 +158,7 @@ const apiKeyMiddleware = async (req: express.Request, res: express.Response, nex
 
     return res.status(401).json({ error: "Acesso não autorizado. Por favor forneça uma chave de API válida..." });
   }
+  (req as any).apiKey = requiredKey;
   next();
 };
 
@@ -190,6 +192,7 @@ app.post("/api/integration/finance", apiKeyMiddleware, async (req, res) => {
           userId: 'system-integration',
           userName: 'Loja Dicas Connector',
           timestamp: serverTimestamp(),
+          apiKey: (req as any).apiKey,
           changes: {
             before: { status: "rejected_format" },
             after: { 
@@ -218,7 +221,8 @@ app.post("/api/integration/finance", apiKeyMiddleware, async (req, res) => {
       origin: origin,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-      notes: "Automated entry from Loja Dicas by Ale integration."
+      notes: "Automated entry from Loja Dicas by Ale integration.",
+      apiKey: (req as any).apiKey
     };
 
     const docRef = await addDoc(collection(db, 'transactions'), transactionData);
@@ -231,6 +235,7 @@ app.post("/api/integration/finance", apiKeyMiddleware, async (req, res) => {
       userId: 'system-integration',
       userName: 'Loja Dicas Connector',
       timestamp: serverTimestamp(),
+      apiKey: (req as any).apiKey,
       changes: { after: transactionData }
     });
 
@@ -270,6 +275,7 @@ app.post("/api/integration/hr/nexus", apiKeyMiddleware, async (req, res) => {
           userId: 'system-integration',
           userName: 'Nexus ERP Connector',
           timestamp: serverTimestamp(),
+          apiKey: (req as any).apiKey,
           changes: {
             before: { status: "rejected_format" },
             after: { 
@@ -355,6 +361,7 @@ app.post("/api/integration/hr/nexus", apiKeyMiddleware, async (req, res) => {
       hiredAt: serverTimestamp(),
       performanceScore: 0,
       origin: 'Nexus ERP',
+      apiKey: (req as any).apiKey,
       virtualFolders: [
         { name: "Boletos", createdAt: new Date().toISOString(), files: [] },
         { name: "Ponto", createdAt: new Date().toISOString(), files: [] },
@@ -371,7 +378,8 @@ app.post("/api/integration/hr/nexus", apiKeyMiddleware, async (req, res) => {
     const finalId = employeeIdInput || docRef.id;
 
     await updateDoc(doc(db, 'employees', docRef.id), {
-      id: docRef.id
+      id: docRef.id,
+      apiKey: (req as any).apiKey
     });
 
     try {
@@ -384,7 +392,8 @@ app.post("/api/integration/hr/nexus", apiKeyMiddleware, async (req, res) => {
         temporaryPassword: 'Nexus123!',
         mustChangePassword: true,
         permissions: permissions,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        apiKey: (req as any).apiKey
       });
       console.log(`[HR Integration] Linked User Account created for ${email}`);
     } catch (userAccountError) {
@@ -398,6 +407,7 @@ app.post("/api/integration/hr/nexus", apiKeyMiddleware, async (req, res) => {
       userId: 'system-integration',
       userName: 'Nexus ERP Connector',
       timestamp: serverTimestamp(),
+      apiKey: (req as any).apiKey,
       changes: { after: employeeData }
     });
 
