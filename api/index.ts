@@ -2,21 +2,8 @@ import express from "express";
 import path from "path";
 import cors from "cors";
 import fs from "fs";
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  getDoc, 
-  getDocs, 
-  addDoc, 
-  setDoc, 
-  updateDoc, 
-  query, 
-  where, 
-  serverTimestamp, 
-  Timestamp 
-} from "firebase/firestore";
+import { initializeApp, getApps } from "firebase-admin/app";
+import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
 import axios from "axios";
 
 // Dynamically read firebase config safely across different node and package environments
@@ -49,17 +36,19 @@ const actualConfig = {
   appId: firebaseConfig.appId || "1:87598436483:web:42b2996f17634463e08bb6"
 };
 
-// Initialize Firebase SDK Client
+// Initialize Firebase Admin SDK
 let appRef: any;
 try {
   if (getApps().length === 0) {
-    appRef = initializeApp(actualConfig);
-    console.log(`[AdminHub] Firebase Client SDK initialized for project: ${actualConfig.projectId}`);
+    appRef = initializeApp({
+      projectId: actualConfig.projectId,
+    });
+    console.log(`[AdminHub] Firebase Admin SDK initialized for project: ${actualConfig.projectId}`);
   } else {
-    appRef = getApp();
+    appRef = getApps()[0];
   }
 } catch (error) {
-  console.error("[AdminHub] Critical failure initializing Firebase Client SDK:", error);
+  console.error("[AdminHub] Critical failure initializing Firebase Admin SDK:", error);
 }
 
 // Explicitly pass the app reference and database ID
@@ -111,8 +100,8 @@ const apiKeyMiddleware = async (req: express.Request, res: express.Response, nex
   // 2. Fallback to DB
   if (!requiredKey) {
     try {
-      const configSnap = await getDoc(doc(db, 'system', 'config'));
-      if (configSnap.exists()) {
+      const configSnap = await db.collection('system').doc('config').get();
+      if (configSnap.exists) {
         requiredKey = configSnap.data()?.integrations?.adminHubApiKey;
       }
     } catch (dbError) {
@@ -130,13 +119,13 @@ const apiKeyMiddleware = async (req: express.Request, res: express.Response, nex
     
     // Permanent Audit Log for unauthorized access attempts
     try {
-      await addDoc(collection(db, 'auditLogs'), {
+      await db.collection('auditLogs').add({
         action: 'failed_login',
         resource: 'auth',
         resourceId: 'api-auth-failure',
         userId: 'system-integration-unauthorized',
         userName: 'Unauthorized API Access Attempt',
-        timestamp: serverTimestamp(),
+        timestamp: FieldValue.serverTimestamp(),
         apiKey: requiredKey,
         changes: {
           before: { status: "unauthorized" },
@@ -185,13 +174,13 @@ app.post("/api/integration/finance", apiKeyMiddleware, async (req, res) => {
 
       // Log transaction rejection to auditLogs
       try {
-        await addDoc(collection(db, 'auditLogs'), {
+        await db.collection('auditLogs').add({
           action: 'create',
           resource: 'transactions',
           resourceId: 'finance-integration-failure',
           userId: 'system-integration',
           userName: 'Loja Dicas Connector',
-          timestamp: serverTimestamp(),
+          timestamp: FieldValue.serverTimestamp(),
           apiKey: (req as any).apiKey,
           changes: {
             before: { status: "rejected_format" },
@@ -215,26 +204,26 @@ app.post("/api/integration/finance", apiKeyMiddleware, async (req, res) => {
       type: 'income',
       category: 'Sales',
       costCenter: sector,
-      date: date ? Timestamp.fromDate(new Date(date)) : serverTimestamp(),
+      date: date ? Timestamp.fromDate(new Date(date)) : FieldValue.serverTimestamp(),
       status: transactionStatus,
       auditStatus: auditStatus,
       origin: origin,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
       notes: "Automated entry from Loja Dicas by Ale integration.",
       apiKey: (req as any).apiKey
     };
 
-    const docRef = await addDoc(collection(db, 'transactions'), transactionData);
+    const docRef = await db.collection('transactions').add(transactionData);
 
     // Audit Log for Success
-    await addDoc(collection(db, 'auditLogs'), {
+    await db.collection('auditLogs').add({
       action: 'create',
       resource: 'transactions',
       resourceId: docRef.id,
       userId: 'system-integration',
       userName: 'Loja Dicas Connector',
-      timestamp: serverTimestamp(),
+      timestamp: FieldValue.serverTimestamp(),
       apiKey: (req as any).apiKey,
       changes: { after: transactionData }
     });
@@ -268,13 +257,13 @@ app.post("/api/integration/hr/nexus", apiKeyMiddleware, async (req, res) => {
       if (!role) missingFields.push("role/papel/position");
 
       try {
-        await addDoc(collection(db, 'auditLogs'), {
+        await db.collection('auditLogs').add({
           action: 'create',
           resource: 'employees',
           resourceId: 'hr-integration-failure',
           userId: 'system-integration',
           userName: 'Nexus ERP Connector',
-          timestamp: serverTimestamp(),
+          timestamp: FieldValue.serverTimestamp(),
           apiKey: (req as any).apiKey,
           changes: {
             before: { status: "rejected_format" },
@@ -293,9 +282,8 @@ app.post("/api/integration/hr/nexus", apiKeyMiddleware, async (req, res) => {
     }
 
     // Check if employee already exists by email
-    const q = query(collection(db, 'employees'), where('email', '==', email));
-    const existing = await getDocs(q);
-    if (existing.docs.length > 0) {
+    const existing = await db.collection('employees').where('email', '==', email).get();
+    if (!existing.empty) {
       return res.status(200).json({ status: "exists", id: existing.docs[0].id });
     }
 
@@ -358,7 +346,7 @@ app.post("/api/integration/hr/nexus", apiKeyMiddleware, async (req, res) => {
       departmentName: deptInfo.name,
       status: 'onboarding',
       salary: 0,
-      hiredAt: serverTimestamp(),
+      hiredAt: FieldValue.serverTimestamp(),
       performanceScore: 0,
       origin: 'Nexus ERP',
       apiKey: (req as any).apiKey,
@@ -368,22 +356,22 @@ app.post("/api/integration/hr/nexus", apiKeyMiddleware, async (req, res) => {
         { name: "Histórico", createdAt: new Date().toISOString(), files: [] }
       ],
       history: [{
-        date: serverTimestamp(),
+        date: Timestamp.now(),
         event: 'Importação Nexus',
         description: `Colaborador importado e integrado de forma inteligente ao departamento ${deptInfo.name}.`
       }]
     };
 
-    const docRef = await addDoc(collection(db, 'employees'), employeeData);
+    const docRef = await db.collection('employees').add(employeeData);
     const finalId = employeeIdInput || docRef.id;
 
-    await updateDoc(doc(db, 'employees', docRef.id), {
+    await db.collection('employees').doc(docRef.id).update({
       id: docRef.id,
       apiKey: (req as any).apiKey
     });
 
     try {
-      await setDoc(doc(db, 'users', finalId), {
+      await db.collection('users').doc(finalId).set({
         uid: finalId,
         email: email,
         displayName: name,
@@ -392,7 +380,7 @@ app.post("/api/integration/hr/nexus", apiKeyMiddleware, async (req, res) => {
         temporaryPassword: 'Nexus123!',
         mustChangePassword: true,
         permissions: permissions,
-        createdAt: serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
         apiKey: (req as any).apiKey
       });
       console.log(`[HR Integration] Linked User Account created for ${email}`);
@@ -400,13 +388,13 @@ app.post("/api/integration/hr/nexus", apiKeyMiddleware, async (req, res) => {
       console.error("[HR Integration] Failed to create secondary user document:", userAccountError);
     }
 
-    await addDoc(collection(db, 'auditLogs'), {
+    await db.collection('auditLogs').add({
       action: 'create',
       resource: 'employees',
       resourceId: docRef.id,
       userId: 'system-integration',
       userName: 'Nexus ERP Connector',
-      timestamp: serverTimestamp(),
+      timestamp: FieldValue.serverTimestamp(),
       apiKey: (req as any).apiKey,
       changes: { after: employeeData }
     });
@@ -433,8 +421,8 @@ app.post("/api/integration/hr/nexus-outbound", async (req, res) => {
     let nexusKey = process.env.NEXUS_API_KEY;
 
     if (!nexusUrl || !nexusKey) {
-      const configSnap = await getDoc(doc(db, 'system', 'config'));
-      if (configSnap.exists()) {
+      const configSnap = await db.collection('system').doc('config').get();
+      if (configSnap.exists) {
         const config = configSnap.data();
         nexusUrl = nexusUrl || config?.integrations?.nexusBaseUrl;
         nexusKey = nexusKey || config?.integrations?.nexusApiKey;

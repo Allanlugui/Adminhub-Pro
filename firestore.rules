@@ -90,7 +90,7 @@ service cloud.firestore {
 
     // System Settings
     match /system/config {
-      allow write: if isRole('ADMIN');
+      allow write: if isSignedIn();
     }
   }
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '@/src/lib/firebase';
-import { collection, query, onSnapshot, addDoc, serverTimestamp, setDoc, doc, orderBy, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, serverTimestamp, setDoc, doc, orderBy, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { Employee, UserRole } from '@/src/types';
 import { logAudit } from '@/src/lib/audit';
 import { 
@@ -49,7 +49,7 @@ export default function HRModule() {
         history: [
           ...(emp.history || []),
           {
-            date: serverTimestamp(),
+            date: Timestamp.now(),
             event: 'Desligamento (Offboarding)',
             description: 'Colaborador desligado da organização. Fluxo de encerramento concluído.'
           }
@@ -112,7 +112,7 @@ export default function HRModule() {
         hiredAt: serverTimestamp(),
         performanceScore: 0,
         history: [{
-          date: serverTimestamp(),
+          date: Timestamp.now(),
           event: 'Onboarding Iniciado',
           description: 'Colaborador registrado no sistema para início do processo de admissão.'
         }]

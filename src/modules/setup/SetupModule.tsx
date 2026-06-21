@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { db } from '@/src/lib/firebase';
-import { collection, addDoc, serverTimestamp, writeBatch, doc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, writeBatch, doc, Timestamp } from 'firebase/firestore';
 import { Database, Users, Box, Zap, ShieldAlert, CheckCircle, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
@@ -54,7 +54,7 @@ export default function SetupModule() {
             transportVoucher: i % 3 === 0
           },
           history: [{
-            date: serverTimestamp(),
+            date: Timestamp.now(),
             event: 'Admissão',
             description: 'Carga inicial via Setup de Lançamento.'
           }]
