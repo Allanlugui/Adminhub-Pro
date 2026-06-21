@@ -7,17 +7,7 @@ import { initializeApp, getApps } from "firebase-admin/app";
 import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
 import axios from "axios";
 
-// Helper to load firebase applet config from workspace root
-let firebaseConfig: any = {};
-try {
-  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-  if (fs.existsSync(configPath)) {
-    const raw = fs.readFileSync(configPath, "utf8");
-    firebaseConfig = JSON.parse(raw);
-  }
-} catch (configError) {
-  console.error("[AdminHub] Failed to load firebase config dynamically:", configError);
-}
+import firebaseConfig from "../firebase-applet-config.json" assert { type: "json" };
 
 // Initialize Firebase Admin
 let firebaseAdminApp: any;
