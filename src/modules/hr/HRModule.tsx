@@ -88,8 +88,9 @@ export default function HRModule() {
       toast.warning(`Offboarding de ${emp.name} concluído.`);
       setIsOffboardingModalOpen(false);
       setOffboardingEmployeeId('');
-    } catch (error) {
-      toast.error('Erro no processo de desligamento.');
+    } catch (error: any) {
+      console.error("[HR Error]", error);
+      toast.error('Erro no processo de desligamento: ' + (error?.message || error?.toString() || 'Erro desconhecido'));
     }
   };
 
@@ -131,9 +132,9 @@ export default function HRModule() {
           })
         });
         toast.info('Dados sincronizados com sucesso no ERP Nexus.');
-      } catch (syncError) {
+      } catch (syncError: any) {
         console.error('Falha na sincronização Nexus:', syncError);
-        toast.error('Colaborador criado, mas falha na sincronização com Nexus.');
+        toast.error('Colaborador criado, mas falha na sincronização com Nexus. Detalhes: ' + (syncError?.message || syncError?.toString() || 'Erro de conexão'));
       }
 
       await logAudit('create', 'employees', docRef.id, { after: formData });
@@ -154,8 +155,9 @@ export default function HRModule() {
 
       toast.success(`${formData.name} entrou em onboarding!`);
       setIsCreateModalOpen(false);
-    } catch (error) {
-      toast.error('Erro ao registrar colaborador.');
+    } catch (error: any) {
+      console.error("[HR Error]", error);
+      toast.error('Erro ao registrar colaborador. Detalhes: ' + (error?.message || error?.toString() || 'Erro interno no banco/servidor'));
     }
   };
 
