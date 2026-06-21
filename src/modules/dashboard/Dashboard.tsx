@@ -65,9 +65,34 @@ export default function Dashboard() {
       const pendingCount = docs.filter((d: any) => d.status === 'pending_approval' || d.status === 'pending').length;
       setStats(s => ({ ...s, revenue: total || 0, pendingApprovals: pendingCount }));
 
-      // Process chart data (last 7 days or similar)
-      // For production simplicity, we start with empty or zeros if no data
-      setChartData([]);
+      // Process chart data dynamically grouped by DD/MM
+      const dailyMap: { [key: string]: { name: string, receita: number, despesa: number, rawDate: Date } } = {};
+      
+      docs.forEach((t: any) => {
+        if (!t.date) return;
+        const d = t.date.toDate ? t.date.toDate() : new Date(t.date);
+        const day = d.getDate().toString().padStart(2, '0');
+        const month = (d.getMonth() + 1).toString().padStart(2, '0');
+        const label = `${day}/${month}`;
+        
+        if (!dailyMap[label]) {
+          dailyMap[label] = { name: label, receita: 0, despesa: 0, rawDate: d };
+        }
+        
+        const amt = Number(t.amount) || 0;
+        if (t.type === 'income') {
+          dailyMap[label].receita += amt;
+        } else if (t.type === 'expense') {
+          dailyMap[label].despesa += amt;
+        }
+      });
+
+      const sortedChartData = Object.values(dailyMap)
+        .sort((a, b) => a.rawDate.getTime() - b.rawDate.getTime())
+        .map(({ name, receita, despesa }) => ({ name, receita, despesa }))
+        .slice(-7);
+
+      setChartData(sortedChartData);
     });
 
     return () => { unsubAct(); unsubEmp(); unsubInv(); unsubTickets(); unsubTrans(); };
