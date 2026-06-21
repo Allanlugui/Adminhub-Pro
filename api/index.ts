@@ -7,7 +7,25 @@ import { initializeApp, getApps } from "firebase-admin/app";
 import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
 import axios from "axios";
 
-import firebaseConfig from "../firebase-applet-config.json" assert { type: "json" };
+// Dynamically read firebase config safely across different node and package environments
+let firebaseConfig: any = {};
+try {
+  const possiblePaths = [
+    path.join(process.cwd(), "firebase-applet-config.json"),
+    path.join(process.cwd(), "../firebase-applet-config.json"),
+    path.resolve(__dirname, "firebase-applet-config.json"),
+    path.resolve(__dirname, "../firebase-applet-config.json"),
+    path.resolve(__dirname, "../../firebase-applet-config.json")
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      firebaseConfig = JSON.parse(fs.readFileSync(p, "utf8"));
+      break;
+    }
+  }
+} catch (e) {
+  console.error("[AdminHub] Failed to load firebase config dynamically:", e);
+}
 
 // Initialize Firebase Admin
 let firebaseAdminApp: any;
