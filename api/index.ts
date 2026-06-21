@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import cors from "cors";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import { initializeApp, getApps } from "firebase-admin/app";
 import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
 import axios from "axios";
@@ -452,14 +451,18 @@ app.post("/api/integration/hr/nexus-outbound", async (req, res) => {
 // --- VITE MIDDLEWARE & STANDALONE ASSET SERVING ---
 
 if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-  createViteServer({
-    server: { middlewareMode: true },
-    appType: "spa",
-  }).then((vite) => {
-    app.use(vite.middlewares);
-    console.log("[AdminHub] Vite Dev Server middleware loaded successfully.");
+  import("vite").then(({ createServer: createViteServer }) => {
+    createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    }).then((vite) => {
+      app.use(vite.middlewares);
+      console.log("[AdminHub] Vite Dev Server middleware loaded successfully.");
+    }).catch((err) => {
+      console.error("[AdminHub] Vite Dev Server integration failed asynchronously:", err);
+    });
   }).catch((err) => {
-    console.error("[AdminHub] Vite Dev Server integration failed asynchronously:", err);
+    console.error("[AdminHub] Failed to import vite dynamically:", err);
   });
 } else {
   const distPath = path.join(process.cwd(), "dist");
