@@ -89,7 +89,7 @@ export default function SettingsModule() {
       if (err.code === 'permission-denied') {
         toast.error('Permissão insuficiente: Apenas administradores oficiais podem realizar esta alteração.');
       } else {
-        toast.error('Erro inesperado ao salvar as configurações. Tente novamente.');
+        toast.error('Erro inesperado ao salvar as configurações. Detalhes: ' + (err?.message || err?.toString() || 'Erro desconhecido'));
       }
     } finally {
       setSaving(false);

@@ -64,9 +64,9 @@ export default function SetupModule() {
       await batch.commit();
       setCompleted(prev => ({ ...prev, users: true }));
       toast.success('Carga de usuários e colaboradores finalizada!');
-    } catch (error) {
-      console.error(error);
-      toast.error('Erro na carga de dados.');
+    } catch (error: any) {
+      console.error("[Setup Error]", error);
+      toast.error('Erro na carga de dados: ' + (error?.message || error?.toString() || 'Erro desconhecido'));
     } finally {
       setLoading(false);
     }
@@ -92,8 +92,9 @@ export default function SetupModule() {
       await batch.commit();
       setCompleted(prev => ({ ...prev, inventory: true }));
       toast.success('Carga de estoque finalizada!');
-    } catch (error) {
-      toast.error('Erro na carga de estoque.');
+    } catch (error: any) {
+      console.error("[Setup Error]", error);
+      toast.error('Erro na carga de estoque: ' + (error?.message || error?.toString() || 'Erro desconhecido'));
     } finally {
       setLoading(false);
     }
